@@ -1,0 +1,149 @@
+# Dependencies
+node_modules/
+.pnp/
+.pnp.js
+
+# Testing
+coverage/
+.nyc_output/
+
+# Production
+/out/
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# Rust
+/target/
+debug/
+**/*.rs.bk
+Cargo.lock
+
+# IDEs and editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*.swn
+*.bak
+*~
+
+# Environment variables
+.env
+.env.local
+.env.development
+.env.development.local
+.env.test
+.env.test.local
+.env.production
+.env.production.local
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Frontend specific
+# dependencies
+quiz-app-frontend/node_modules/
+# misc
+quiz-app-frontend/.DS_Store
+quiz-app-frontend/.env.local
+quiz-app-frontend/.env.development.local
+quiz-app-frontend/.env.test.local
+quiz-app-frontend/.env.production.local
+quiz-app-frontend/npm-debug.log*
+quiz-app-frontend/yarn-debug.log*
+quiz-app-frontend/yarn-error.log*
+
+# Backend specific
+quiz-app-backend/target/
+quiz-app-backend/debug/
+quiz-app-backend/**/*.rs.bk
+quiz-app-backend/Cargo.lock
+
+# Database
+*.sqlite
+*.sqlite3
+*.db
+
+# OS specific
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Optional REPL history
+.node_repl_history
+
+# dotenv environment variable files
+.env*
+
+# parcel-bundler cache
+.cache
+.parcel-cache
+
+# Additional build artifacts
+.cache/
+dist/
+build/
+*.log
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Environment variables
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Rust specific
+/target/
+Cargo.lock
+**/*.rs.bk
+debug/
+
+# Node specific
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnp/
+.pnp.js
+.cache/
+dist/
+
+# Editor specific
+.idea/
+.vscode/
+*.swp
+*.swo
+*.swn
+*.bak
+*~
+
+# Build output
+/build/
+/dist/
+/out/
+/.next/

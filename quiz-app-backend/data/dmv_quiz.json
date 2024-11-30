@@ -1,0 +1,74 @@
+[
+  {
+    "title": "DMV Practice Test - Road Signs",
+    "description": "Test your knowledge of common road signs and their meanings",
+    "questions": [
+      {
+        "question_text": "What does a red octagonal sign mean?",
+        "options": [
+          "Stop",
+          "Yield",
+          "Slow down",
+          "Merge"
+        ],
+        "correct_answer": "Stop"
+      },
+      {
+        "question_text": "What does a yellow diamond-shaped sign indicate?",
+        "options": [
+          "Stop ahead",
+          "Warning",
+          "School zone",
+          "Construction"
+        ],
+        "correct_answer": "Warning"
+      },
+      {
+        "question_text": "What does a round sign with a red circle and slash mean?",
+        "options": [
+          "No entry",
+          "Stop ahead",
+          "One way",
+          "Yield"
+        ],
+        "correct_answer": "No entry"
+      }
+    ]
+  },
+  {
+    "title": "DMV Practice Test - Traffic Laws",
+    "description": "Test your knowledge of basic traffic laws and regulations",
+    "questions": [
+      {
+        "question_text": "What is the default speed limit in a residential area?",
+        "options": [
+          "15 mph",
+          "25 mph",
+          "35 mph",
+          "45 mph"
+        ],
+        "correct_answer": "25 mph"
+      },
+      {
+        "question_text": "When must you use your headlights?",
+        "options": [
+          "Only at night",
+          "When it's raining",
+          "30 minutes after sunset to 30 minutes before sunrise",
+          "All of the above"
+        ],
+        "correct_answer": "All of the above"
+      },
+      {
+        "question_text": "What should you do at a yellow traffic light?",
+        "options": [
+          "Speed up to get through",
+          "Stop if you can do so safely",
+          "Always stop immediately",
+          "Honk your horn"
+        ],
+        "correct_answer": "Stop if you can do so safely"
+      }
+    ]
+  }
+]

@@ -1,0 +1,2 @@
+#!/bin/bash
+"$QUIZ_APP_ROOT/scripts/commands.sh" serve "$@"

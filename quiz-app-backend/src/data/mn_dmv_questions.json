@@ -1,0 +1,90 @@
+{
+  "title": "Minnesota DMV Practice Test",
+  "description": "Official practice test for the Minnesota Driver's License Exam",
+  "categories": [
+    {
+      "name": "Road Signs and Traffic Signals",
+      "questions": [
+        {
+          "text": "What does a red octagonal sign mean?",
+          "explanation": "A red octagonal sign always means STOP. You must come to a complete stop at the stop line, if marked, or before entering the crosswalk or intersection.",
+          "difficulty": "easy",
+          "answers": [
+            {
+              "text": "Stop completely",
+              "is_correct": true
+            },
+            {
+              "text": "Slow down",
+              "is_correct": false
+            },
+            {
+              "text": "Yield to other traffic",
+              "is_correct": false
+            },
+            {
+              "text": "Proceed with caution",
+              "is_correct": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Speed Limits and Safe Driving",
+      "questions": [
+        {
+          "text": "What is the speed limit in urban residential areas unless otherwise posted?",
+          "explanation": "In Minnesota, the speed limit in urban residential areas is 30 mph unless otherwise posted.",
+          "difficulty": "easy",
+          "answers": [
+            {
+              "text": "30 mph",
+              "is_correct": true
+            },
+            {
+              "text": "25 mph",
+              "is_correct": false
+            },
+            {
+              "text": "35 mph",
+              "is_correct": false
+            },
+            {
+              "text": "40 mph",
+              "is_correct": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Right of Way Rules",
+      "questions": [
+        {
+          "text": "When two vehicles reach an intersection at the same time, which vehicle has the right of way?",
+          "explanation": "When two vehicles reach an intersection at the same time, the vehicle on the right has the right of way unless otherwise indicated by signs or signals.",
+          "difficulty": "medium",
+          "answers": [
+            {
+              "text": "The vehicle on the right",
+              "is_correct": true
+            },
+            {
+              "text": "The vehicle on the left",
+              "is_correct": false
+            },
+            {
+              "text": "The larger vehicle",
+              "is_correct": false
+            },
+            {
+              "text": "The faster vehicle",
+              "is_correct": false
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

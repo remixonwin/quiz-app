@@ -29,16 +29,6 @@ Cargo.lock
 *.bak
 *~
 
-# Environment variables
-.env
-.env.local
-.env.development
-.env.development.local
-.env.test
-.env.test.local
-.env.production
-.env.production.local
-
 # Logs
 logs/
 *.log
@@ -89,7 +79,15 @@ Thumbs.db
 .node_repl_history
 
 # dotenv environment variable files
-.env*
+#.env*
+#.env
+#.env.local
+#.env.development
+#.env.development.local
+#.env.test
+#.env.test.local
+#.env.production
+#.env.production.local
 
 # parcel-bundler cache
 .cache
@@ -109,13 +107,6 @@ build/
 .Trashes
 ehthumbs.db
 Thumbs.db
-
-# Environment variables
-.env
-.env.local
-.env.development
-.env.test
-.env.production
 
 # Rust specific
 /target/

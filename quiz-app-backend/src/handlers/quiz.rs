@@ -1,275 +1,216 @@
 use actix_web::{
-    web, 
-    Error, 
-    HttpResponse, 
-    error::{
-        ErrorInternalServerError, 
-        ErrorBadRequest
-    }
+    get, post, put, delete,
+    web, HttpResponse, Responder
 };
-use chrono::Utc;
-use sqlx::PgPool;
-use serde_json::json;
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use sqlx::{PgPool, Error as SqlxError};
 
-use crate::auth::Claims;
-use crate::models::{
-    Answer, CreateQuiz, Question, Quiz, QuizAttempt, SubmitQuizAttempt
+use crate::{
+    auth::Claims,
+    error::AppError,
+    models::{Quiz, CreateQuiz, QuizAttemptResponse, UserAnswer},
 };
 
-pub async fn list_quizzes(
-    pool: web::Data<PgPool>,
-) -> Result<HttpResponse, Error> {
-    let quizzes = sqlx::query_as!(
-        Quiz,
-        r#"
-        SELECT 
-            id as "id!", 
-            title, 
-            description, 
-            creator_id as "creator_id!", 
-            created_at 
-        FROM quizzes
-        "#
-    )
-    .fetch_all(pool.get_ref())
-    .await
-    .map_err(ErrorInternalServerError)?;
-
-    Ok(HttpResponse::Ok().json(quizzes))
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateQuizRequest {
+    pub title: String,
+    pub description: String,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct QuestionAnswer {
+    pub question_id: i32,
+    pub selected_answer_id: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SubmitQuizRequest {
+    pub answers: Vec<QuestionAnswer>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct QuizPath {
+    quiz_id: i32,
+}
+
+#[post("/quizzes")]
 pub async fn create_quiz(
     pool: web::Data<PgPool>,
-    quiz_data: web::Json<CreateQuiz>,
-    claims: web::ReqData<Claims>,
-) -> Result<HttpResponse, Error> {
+    quiz: web::Json<CreateQuiz>,
+    claims: Claims,
+) -> Result<HttpResponse, AppError> {
     let quiz = sqlx::query_as!(
         Quiz,
         r#"
-        INSERT INTO quizzes (title, description, creator_id, created_at)
-        VALUES ($1, $2, $3, $4)
-        RETURNING 
-            id as "id!", 
-            title, 
-            description, 
-            creator_id as "creator_id!", 
-            created_at
+        INSERT INTO quizzes (title, description, created_by, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING id, title, description, created_by, created_at, updated_at
         "#,
-        quiz_data.title,
-        quiz_data.description,
-        claims.sub,
-        Utc::now()
+        quiz.title,
+        quiz.description,
+        claims.user_id,
+        Utc::now(),
+        None::<chrono::DateTime<Utc>>,
     )
     .fetch_one(pool.get_ref())
-    .await
-    .map_err(ErrorInternalServerError)?;
+    .await?;
 
     Ok(HttpResponse::Created().json(quiz))
 }
 
+#[get("/quizzes")]
+pub async fn get_quizzes(
+    pool: web::Data<PgPool>,
+) -> Result<HttpResponse, AppError> {
+    let quizzes = sqlx::query_as!(
+        Quiz,
+        r#"
+        SELECT id, title, description, created_by, created_at, updated_at
+        FROM quizzes
+        ORDER BY created_at DESC
+        "#,
+    )
+    .fetch_all(pool.get_ref())
+    .await?;
+
+    Ok(HttpResponse::Ok().json(quizzes))
+}
+
+#[get("/quizzes/{quiz_id}")]
 pub async fn get_quiz(
     pool: web::Data<PgPool>,
     quiz_id: web::Path<i32>,
-) -> Result<HttpResponse, Error> {
+) -> Result<HttpResponse, AppError> {
+    let id = quiz_id.into_inner();
     let quiz = sqlx::query_as!(
         Quiz,
         r#"
-        SELECT 
-            id as "id!", 
-            title, 
-            description, 
-            creator_id as "creator_id!", 
-            created_at 
+        SELECT id, title, description, created_by, created_at, updated_at
         FROM quizzes
         WHERE id = $1
         "#,
-        quiz_id.into_inner()
+        id
     )
     .fetch_optional(pool.get_ref())
-    .await
-    .map_err(ErrorInternalServerError)?
-    .ok_or_else(|| ErrorBadRequest("Quiz not found"))?;
+    .await?;
 
-    // Fetch questions for the quiz
-    let questions = sqlx::query_as!(
-        Question,
-        r#"
-        SELECT 
-            id as "id!", 
-            quiz_id as "quiz_id!", 
-            question_text, 
-            question_type, 
-            order_num, 
-            created_at 
-        FROM questions
-        WHERE quiz_id = $1
-        ORDER BY order_num
-        "#,
-        quiz.id
-    )
-    .fetch_all(pool.get_ref())
-    .await
-    .map_err(ErrorInternalServerError)?;
-
-    // Fetch answers for each question
-    let mut quiz_with_details = json!({
-        "quiz": quiz,
-        "questions": []
-    });
-
-    for question in questions {
-        let answers = sqlx::query_as!(
-            Answer,
-            r#"
-            SELECT 
-                id as "id!", 
-                question_id as "question_id!", 
-                answer_text, 
-                is_correct, 
-                order_num, 
-                created_at 
-            FROM answers
-            WHERE question_id = $1
-            ORDER BY order_num
-            "#,
-            question.id
-        )
-        .fetch_all(pool.get_ref())
-        .await
-        .map_err(ErrorInternalServerError)?;
-
-        let question_with_answers = json!({
-            "question": question,
-            "answers": answers
-        });
-
-        quiz_with_details["questions"].as_array_mut().unwrap().push(question_with_answers);
+    match quiz {
+        Some(quiz) => Ok(HttpResponse::Ok().json(quiz)),
+        None => Ok(HttpResponse::NotFound().finish()),
     }
-
-    Ok(HttpResponse::Ok().json(quiz_with_details))
 }
 
+#[put("/quizzes/{id}")]
+pub async fn update_quiz(
+    pool: web::Data<PgPool>,
+    id: web::Path<i32>,
+    quiz: web::Json<CreateQuiz>,
+    claims: Claims,
+) -> Result<HttpResponse, AppError> {
+    let id = id.into_inner();
+    
+    // Check if quiz exists and user owns it
+    let existing_quiz = sqlx::query_as!(
+        Quiz,
+        r#"
+        SELECT id, title, description, created_by, created_at, updated_at
+        FROM quizzes
+        WHERE id = $1 AND created_by = $2
+        "#,
+        id,
+        claims.user_id
+    )
+    .fetch_one(&**pool)
+    .await
+    .map_err(|_| AppError::NotFound("Quiz not found or unauthorized".to_string()))?;
+
+    // Update the quiz
+    let updated_quiz = sqlx::query_as!(
+        Quiz,
+        r#"
+        UPDATE quizzes
+        SET title = $1, description = $2, updated_at = $3
+        WHERE id = $4
+        RETURNING id, title, description, created_by, created_at, updated_at
+        "#,
+        quiz.title,
+        quiz.description,
+        Utc::now(),
+        id
+    )
+    .fetch_one(&**pool)
+    .await
+    .map_err(AppError::DatabaseError)?;
+
+    Ok(HttpResponse::Ok().json(updated_quiz))
+}
+
+#[delete("/quizzes/{quiz_id}")]
+pub async fn delete_quiz(
+    pool: web::Data<PgPool>,
+    quiz_id: web::Path<i32>,
+    claims: Claims,
+) -> Result<HttpResponse, AppError> {
+    let id = quiz_id.into_inner();
+    
+    // Check if quiz exists and user owns it
+    let quiz = sqlx::query!(
+        r#"
+        SELECT created_by FROM quizzes WHERE id = $1
+        "#,
+        id
+    )
+    .fetch_optional(pool.get_ref())
+    .await?;
+
+    let quiz = quiz.ok_or_else(|| AppError::NotFound("Quiz not found".into()))?;
+
+    if quiz.created_by != claims.user_id {
+        return Err(AppError::Unauthorized("Not authorized to delete this quiz".into()));
+    }
+
+    // Delete the quiz
+    sqlx::query!(
+        r#"
+        DELETE FROM quizzes WHERE id = $1
+        "#,
+        id
+    )
+    .execute(pool.get_ref())
+    .await?;
+
+    Ok(HttpResponse::NoContent().finish())
+}
+
+#[post("/quizzes/{quiz_id}/submit")]
 pub async fn submit_quiz(
     pool: web::Data<PgPool>,
     quiz_id: web::Path<i32>,
-    claims: web::ReqData<Claims>,
-    submit_data: web::Json<SubmitQuizAttempt>,
-) -> Result<HttpResponse, Error> {
-    // Verify quiz exists
-    let quiz_id_inner = *quiz_id;
-    let _quiz = sqlx::query_as!(
-        Quiz,
+    user_answers: web::Json<Vec<UserAnswer>>,
+    claims: Claims,
+) -> Result<HttpResponse, AppError> {
+    let id = quiz_id.into_inner();
+    let now = Utc::now();
+    let quiz_attempt = sqlx::query_as!(
+        QuizAttemptResponse,
         r#"
-        SELECT 
-            id as "id!", 
-            title, 
-            description, 
-            creator_id as "creator_id!", 
-            created_at 
-        FROM quizzes
-        WHERE id = $1
-        "#,
-        quiz_id_inner
-    )
-    .fetch_optional(pool.get_ref())
-    .await
-    .map_err(ErrorInternalServerError)?
-    .ok_or_else(|| ErrorBadRequest("Quiz not found"))?;
-
-    // Start a transaction
-    let mut tx = pool.begin()
-        .await
-        .map_err(ErrorInternalServerError)?;
-
-    // Create quiz attempt
-    let attempt = sqlx::query_as!(
-        QuizAttempt,
-        r#"
-        INSERT INTO quiz_attempts (user_id, quiz_id, created_at)
-        VALUES ($1, $2, $3)
+        INSERT INTO quiz_attempts (quiz_id, user_id, completed_at, created_at, updated_at)
+        VALUES ($1, $2, $3, $3, $3)
         RETURNING 
-            id as "id!", 
-            user_id as "user_id!", 
-            quiz_id as "quiz_id!", 
-            score, 
-            completed_at, 
-            created_at
+            id,
+            quiz_id,
+            user_id,
+            completed_at as "completed_at!: DateTime<Utc>",
+            created_at as "created_at!: DateTime<Utc>",
+            updated_at as "updated_at!: DateTime<Utc>"
         "#,
-        claims.sub,
-        quiz_id_inner,
-        Utc::now()
+        id,
+        claims.user_id,
+        now
     )
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(ErrorInternalServerError)?;
+    .fetch_one(pool.get_ref())
+    .await?;
 
-    // Calculate score
-    let mut total_questions = 0;
-    let mut correct_answers = 0;
-
-    for submitted_answer in &submit_data.answers {
-        // Verify the answer belongs to the correct question and is correct
-        let is_correct = sqlx::query!(
-            r#"
-            SELECT is_correct 
-            FROM answers 
-            WHERE id = $1 AND question_id = $2
-            "#,
-            submitted_answer.answer_id,
-            submitted_answer.question_id
-        )
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(ErrorInternalServerError)?
-        .map(|row| row.is_correct)
-        .unwrap_or(false);
-
-        total_questions += 1;
-        if is_correct {
-            correct_answers += 1;
-        }
-    }
-
-    // Convert score to Option<i32> for compatibility
-    let score = if total_questions > 0 {
-        Some((correct_answers * 100 / total_questions) as i32)
-    } else {
-        None
-    };
-
-    // Update quiz attempt with final score
-    let attempt = sqlx::query_as!(
-        QuizAttempt,
-        r#"
-        UPDATE quiz_attempts 
-        SET 
-            score = $1, 
-            completed_at = $2
-        WHERE id = $3
-        RETURNING 
-            id as "id!", 
-            user_id as "user_id!", 
-            quiz_id as "quiz_id!", 
-            score, 
-            completed_at, 
-            created_at
-        "#,
-        score,
-        Utc::now(),
-        attempt.id
-    )
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(ErrorInternalServerError)?;
-
-    // Commit transaction
-    tx.commit()
-        .await
-        .map_err(ErrorInternalServerError)?;
-
-    Ok(HttpResponse::Ok().json(json!({
-        "attempt": attempt,
-        "total_questions": total_questions,
-        "correct_answers": correct_answers
-    })))
+    Ok(HttpResponse::Created().json(quiz_attempt))
 }

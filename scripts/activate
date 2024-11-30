@@ -1,0 +1,20 @@
+#!/bin/bash
+
+# Get the absolute path of the project root directory
+export QUIZ_APP_ROOT="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." && pwd )"
+
+# Add the project's bin directory to PATH (make it first in PATH)
+export PATH="${QUIZ_APP_ROOT}/bin:$PATH"
+
+# Set up environment variables
+export QUIZ_APP_ENV="development"
+
+# Print available commands
+echo -e "\033[0;32m✓ Quiz App development environment activated\033[0m"
+echo -e "\033[0;34mAvailable commands:\033[0m"
+echo "  • setup     - Set up the environment"
+echo "  • start     - Start the application"
+echo "  • serve     - Check everything and start the app"
+echo "  • test      - Run all tests"
+echo "  • clean     - Clean up processes"
+echo ""

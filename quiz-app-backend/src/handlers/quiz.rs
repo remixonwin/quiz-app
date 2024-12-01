@@ -1,10 +1,10 @@
 use actix_web::{
     get, post, put, delete,
-    web, HttpResponse, Responder
+    web, HttpResponse
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::{PgPool, Error as SqlxError};
+use sqlx::PgPool;
 
 use crate::{
     auth::Claims,
@@ -15,7 +15,7 @@ use crate::{
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CreateQuizRequest {
     pub title: String,
-    pub description: String,
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -31,32 +31,38 @@ pub struct SubmitQuizRequest {
 
 #[derive(Debug, Deserialize)]
 pub struct QuizPath {
+    #[allow(dead_code)]
     quiz_id: i32,
 }
 
-#[post("/quizzes")]
+#[post("")]
 pub async fn create_quiz(
     pool: web::Data<PgPool>,
-    quiz: web::Json<CreateQuiz>,
+    quiz_req: web::Json<CreateQuizRequest>,
     claims: Claims,
 ) -> Result<HttpResponse, AppError> {
-    let quiz = sqlx::query_as!(
-        Quiz,
-        r#"
-        INSERT INTO quizzes (title, description, created_by, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5)
-        RETURNING id, title, description, created_by, created_at, updated_at
-        "#,
-        quiz.title,
-        quiz.description,
-        claims.user_id,
-        Utc::now(),
-        None::<chrono::DateTime<Utc>>,
-    )
-    .fetch_one(pool.get_ref())
-    .await?;
+    println!("=== Starting quiz creation ===");
+    println!("Request data - Title: {}, Description: {:?}", quiz_req.title, quiz_req.description);
+    println!("User ID from claims: {}", claims.user_id);
 
-    Ok(HttpResponse::Created().json(quiz))
+    let quiz = CreateQuiz {
+        title: quiz_req.title.clone(),
+        description: quiz_req.description.clone(),
+        created_by: claims.user_id,
+    };
+    println!("Created quiz struct: {:?}", quiz);
+
+    match Quiz::create(&pool, quiz).await {
+        Ok(created_quiz) => {
+            println!("Quiz created successfully: {:?}", created_quiz);
+            Ok(HttpResponse::Created().json(created_quiz))
+        }
+        Err(err) => {
+            println!("Error creating quiz: {:?}", err);
+            println!("Error details: {}", err);
+            Err(err)
+        }
+    }
 }
 
 #[get("/quizzes")]
@@ -101,7 +107,7 @@ pub async fn get_quiz(
     }
 }
 
-#[put("/quizzes/{id}")]
+#[put("/{id}")]
 pub async fn update_quiz(
     pool: web::Data<PgPool>,
     id: web::Path<i32>,
@@ -116,14 +122,18 @@ pub async fn update_quiz(
         r#"
         SELECT id, title, description, created_by, created_at, updated_at
         FROM quizzes
-        WHERE id = $1 AND created_by = $2
+        WHERE id = $1
         "#,
-        id,
-        claims.user_id
+        id
     )
     .fetch_one(&**pool)
     .await
-    .map_err(|_| AppError::NotFound("Quiz not found or unauthorized".to_string()))?;
+    .map_err(|_| AppError::NotFound("Quiz not found".to_string()))?;
+
+    // Verify ownership
+    if existing_quiz.created_by != claims.user_id {
+        return Err(AppError::Unauthorized("You don't have permission to update this quiz".to_string()));
+    }
 
     // Update the quiz
     let updated_quiz = sqlx::query_as!(
@@ -131,28 +141,34 @@ pub async fn update_quiz(
         r#"
         UPDATE quizzes
         SET title = $1, description = $2, updated_at = $3
-        WHERE id = $4
+        WHERE id = $4 AND created_by = $5
         RETURNING id, title, description, created_by, created_at, updated_at
         "#,
         quiz.title,
         quiz.description,
         Utc::now(),
-        id
+        id,
+        claims.user_id
     )
     .fetch_one(&**pool)
     .await
-    .map_err(AppError::DatabaseError)?;
+    .map_err(|e| {
+        println!("Error updating quiz: {:?}", e);
+        AppError::DatabaseError(e)
+    })?;
 
     Ok(HttpResponse::Ok().json(updated_quiz))
 }
 
-#[delete("/quizzes/{quiz_id}")]
+#[delete("/{quiz_id}")]
 pub async fn delete_quiz(
     pool: web::Data<PgPool>,
     quiz_id: web::Path<i32>,
     claims: Claims,
 ) -> Result<HttpResponse, AppError> {
     let id = quiz_id.into_inner();
+    
+    println!("Attempting to delete quiz with ID: {} by user: {}", id, claims.user_id);
     
     // Check if quiz exists and user owns it
     let quiz = sqlx::query!(
@@ -164,21 +180,37 @@ pub async fn delete_quiz(
     .fetch_optional(pool.get_ref())
     .await?;
 
+    if let Some(quiz) = &quiz {
+        println!("Quiz found with ID: {}. Owned by user: {}", id, quiz.created_by);
+    } else {
+        println!("No quiz found with ID: {}", id);
+    }
+
     let quiz = quiz.ok_or_else(|| AppError::NotFound("Quiz not found".into()))?;
 
+    // Change from Unauthorized to Forbidden when user doesn't own the quiz
     if quiz.created_by != claims.user_id {
-        return Err(AppError::Unauthorized("Not authorized to delete this quiz".into()));
+        println!("User: {} is not authorized to delete quiz with ID: {}", claims.user_id, id);
+        return Err(AppError::Forbidden("Not authorized to delete this quiz".into()));
     }
 
     // Delete the quiz
-    sqlx::query!(
+    let result = sqlx::query!(
         r#"
-        DELETE FROM quizzes WHERE id = $1
+        DELETE FROM quizzes WHERE id = $1 AND created_by = $2
         "#,
-        id
+        id,
+        claims.user_id
     )
     .execute(pool.get_ref())
     .await?;
+
+    if result.rows_affected() == 0 {
+        println!("No rows affected when trying to delete quiz with ID: {} by user: {}", id, claims.user_id);
+        return Err(AppError::NotFound("Quiz not found or not authorized".into()));
+    }
+
+    println!("Quiz with ID: {} deleted successfully by user: {}", id, claims.user_id);
 
     Ok(HttpResponse::NoContent().finish())
 }
@@ -187,7 +219,7 @@ pub async fn delete_quiz(
 pub async fn submit_quiz(
     pool: web::Data<PgPool>,
     quiz_id: web::Path<i32>,
-    user_answers: web::Json<Vec<UserAnswer>>,
+    _user_answers: web::Json<Vec<UserAnswer>>,
     claims: Claims,
 ) -> Result<HttpResponse, AppError> {
     let id = quiz_id.into_inner();

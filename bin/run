@@ -1,12 +1,4 @@
 #!/bin/bash
 
-# Get the actual command name from the symlink or script name
-COMMAND=$(basename "$(readlink -f "$0")")
-if [ "$COMMAND" = "run" ]; then
-    # If the script is called directly as 'run', use the first argument as command
-    COMMAND="$1"
-    shift
-fi
-
-# Execute the command with any additional arguments
-"$QUIZ_APP_ROOT/scripts/commands.sh" "$COMMAND" "$@"
+# Execute the command with arguments
+cd "$(dirname "$0")/.." && ./scripts/commands.sh "$@"

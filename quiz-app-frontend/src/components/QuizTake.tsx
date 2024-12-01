@@ -7,16 +7,55 @@ import {
   RadioGroup,
   FormControlLabel,
   Radio,
+  Box,
 } from '@mui/material';
 import { Button, CircularProgress } from '@mui/material';
 import axios from 'axios';
-import { Quiz, Question, Answer } from '../types';
+import { Quiz, Question, Answer } from '../types/quiz';
 
 interface QuizWithQuestions extends Quiz {
-  questions: (Question & { answers: Answer[] })[];
+  questions: Question[];
 }
 
-const QuizTake: React.FC = () => {
+interface QuizTakeProps {
+  quiz: QuizWithQuestions;
+  onAnswer: (questionId: number, answerId: number) => void;
+  selectedAnswers: Record<number, number>;
+}
+
+const QuizTake: React.FC<QuizTakeProps> = ({ quiz, onAnswer, selectedAnswers }) => {
+  const handleAnswerSelect = (questionId: number, answerId: number) => {
+    onAnswer(questionId, answerId);
+  };
+
+  return (
+    <Box data-testid="quiz-container">
+      {quiz.questions.map((question: Question) => (
+        <Paper key={question.id} elevation={2} sx={{ p: 3, mb: 2 }}>
+          <Typography variant="h6" gutterBottom data-testid="quiz-question">
+            {question.question_text}
+          </Typography>
+          <RadioGroup
+            value={selectedAnswers[question.id || 0] || ''}
+            onChange={(e) => handleAnswerSelect(question.id || 0, Number(e.target.value))}
+          >
+            {question.answers.map((answer: Answer) => (
+              <FormControlLabel
+                key={answer.id}
+                value={answer.id}
+                control={<Radio />}
+                label={answer.answer_text}
+                data-testid="answer-option"
+              />
+            ))}
+          </RadioGroup>
+        </Paper>
+      ))}
+    </Box>
+  );
+};
+
+const QuizTakeContainer: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [quiz, setQuiz] = useState<QuizWithQuestions | null>(null);
@@ -95,26 +134,7 @@ const QuizTake: React.FC = () => {
         {quiz.description}
       </Typography>
 
-      {quiz.questions.map((question, index) => (
-        <Paper key={question.id} style={{ padding: '2rem', marginBottom: '2rem' }}>
-          <Typography variant="h6" gutterBottom>
-            Question {index + 1}: {question.question_text}
-          </Typography>
-          <RadioGroup
-            value={selectedAnswers[question.id] || ''}
-            onChange={(e) => handleAnswerSelect(question.id, Number(e.target.value))}
-          >
-            {question.answers.map((answer) => (
-              <FormControlLabel
-                key={answer.id}
-                value={answer.id}
-                control={<Radio />}
-                label={answer.answer_text}
-              />
-            ))}
-          </RadioGroup>
-        </Paper>
-      ))}
+      <QuizTake quiz={quiz} onAnswer={handleAnswerSelect} selectedAnswers={selectedAnswers} />
 
       <Button
         variant="contained"
@@ -129,4 +149,4 @@ const QuizTake: React.FC = () => {
   );
 };
 
-export default QuizTake;
+export default QuizTakeContainer;

@@ -17,18 +17,16 @@ mod db_tests {
 
         let new_user = CreateUser {
             username: "testuser".to_string(),
-            email: "test@example.com".to_string(),
             password: "password123".to_string(),
         };
 
         let result = sqlx::query!(
             r#"
-            INSERT INTO users (username, email, password_hash, created_at)
-            VALUES ($1, $2, $3, $4)
-            RETURNING id, username, email, password_hash, created_at
+            INSERT INTO users (username, password_hash, created_at)
+            VALUES ($1, $2, $3)
+            RETURNING id, username, password_hash, created_at
             "#,
             new_user.username,
-            new_user.email,
             new_user.password,
             Utc::now()
         )
@@ -51,12 +49,11 @@ mod db_tests {
         // First create a user to be the creator
         let user_result = sqlx::query!(
             r#"
-            INSERT INTO users (username, email, password_hash, created_at)
-            VALUES ($1, $2, $3, $4)
-            RETURNING id
+            INSERT INTO users (username, password_hash, created_at)
+            VALUES ($1, $2, $3)
+            RETURNING id, username, password_hash, role, created_at, updated_at
             "#,
             "quizcreator",
-            "quiz@example.com",
             "password123",
             Utc::now()
         )

@@ -1,11 +1,4 @@
-export interface Quiz {
-  id: number;
-  title: string;
-  description: string;
-  creator_id: number;
-  created_at: string;
-  updated_at: string;
-}
+export * from './quiz';
 
 export interface Question {
   id: number;
@@ -21,12 +14,12 @@ export interface Answer {
   is_correct: boolean;
 }
 
-export interface QuizSubmission {
-  quiz_id: number;
-  answers: SubmittedAnswer[];
-}
-
 export interface SubmittedAnswer {
   question_id: number;
   answer_id: number;
+}
+
+export interface QuizSubmission {
+  quiz_id: number;
+  answers: SubmittedAnswer[];
 }

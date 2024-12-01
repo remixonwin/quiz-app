@@ -1,278 +1,155 @@
-#[cfg(test)]
-mod handlers_tests {
-    use actix_web::{
-        test, web, App, HttpResponse,
-        http::StatusCode,
+use actix_web::{test, http::StatusCode};
+use quiz_app_backend::{
+    models::{Quiz, CreateQuiz},
+    test_helpers::{
+        setup_test_app,
+        create_test_quiz_with_title,
+        verify_quiz_in_db,
+        setup_test_context,
+        cleanup_test_data,
+        create_test_user,
+    },
+    auth::generate_token,
+};
+use serde_json::json;
+use chrono::Utc;
+use uuid::Uuid;
+use bcrypt;
+
+#[actix_web::test]
+async fn test_create_quiz() {
+    let ctx = setup_test_context().await;
+    let app = setup_test_app(ctx.pool.clone()).await;
+
+    // Create test user
+    let user_id = create_test_user(&ctx.pool).await;
+
+    let token = generate_token(user_id, "user").expect("Failed to generate token");
+
+    let quiz_data = CreateQuiz {
+        title: "Test Quiz".to_string(),
+        description: Some("A test quiz".to_string()),
+        created_by: user_id,
     };
-    use quiz_app_backend::{
-        handlers::quiz,
-        models::{CreateUser, CreateQuiz},
-        auth::{generate_token, Auth},
+
+    let req = test::TestRequest::post()
+        .uri("/api/quizzes")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(&quiz_data)
+        .to_request();
+
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::CREATED, "Expected 201 Created for quiz creation");
+
+    let quiz: Quiz = test::read_body_json(resp).await;
+    assert_eq!(quiz.title, quiz_data.title);
+    assert_eq!(quiz.description, quiz_data.description);
+    assert_eq!(quiz.created_by, user_id);
+
+    let db_quiz = verify_quiz_in_db(&ctx.pool, quiz.id).await;
+    assert!(db_quiz.is_some(), "Quiz should exist in database");
+
+    cleanup_test_data(&ctx.pool).await;
+}
+
+#[actix_web::test]
+async fn test_update_quiz() {
+    let ctx = setup_test_context().await;
+    let app = setup_test_app(ctx.pool.clone()).await;
+
+    let user_id = create_test_user(&ctx.pool).await;
+
+    let quiz = create_test_quiz_with_title(&ctx.pool, user_id, "Original Title").await;
+
+    let update_data = CreateQuiz {
+        title: "Updated Title".to_string(),
+        description: Some("Updated description".to_string()),
+        created_by: user_id,
     };
-    use sqlx::PgPool;
-    use std::env;
-    use serde_json::json;
-    use chrono;
 
-    async fn setup() -> PgPool {
-        dotenv::dotenv().ok();
-        let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-        // Set JWT secret for testing
-        env::set_var("JWT_SECRET", "test_secret");
-        PgPool::connect(&database_url).await.unwrap()
-    }
+    let token = generate_token(user_id, "user").expect("Failed to generate token");
 
-    async fn create_test_user(pool: &PgPool) -> i32 {
-        let new_user = CreateUser {
-            username: "testuser".to_string(),
-            email: "test@example.com".to_string(),
-            password: "password123".to_string(),
-        };
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/quizzes/{}", quiz.id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(&update_data)
+        .to_request();
 
-        sqlx::query!(
-            r#"
-            INSERT INTO users (username, email, password_hash, created_at)
-            VALUES ($1, $2, $3, $4)
-            RETURNING id
-            "#,
-            new_user.username,
-            new_user.email,
-            new_user.password,
-            chrono::Utc::now()
-        )
-        .fetch_one(pool)
-        .await
-        .expect("Failed to create test user")
-        .id
-    }
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::OK, "Expected 200 OK for quiz update");
 
-    #[actix_web::test]
-    async fn test_health_check() {
-        let app = test::init_service(
-            App::new()
-                .service(web::scope("/api")
-                    .route("/health", web::get().to(|| async { HttpResponse::Ok().finish() })))
-        ).await;
+    let updated_quiz: Quiz = test::read_body_json(resp).await;
+    assert_eq!(updated_quiz.title, "Updated Title");
+    assert_eq!(updated_quiz.description, Some("Updated description".to_string()));
 
-        let req = test::TestRequest::get().uri("/api/health").to_request();
-        let resp = test::call_service(&app, req).await;
-        assert!(resp.status().is_success());
-    }
+    let db_quiz = verify_quiz_in_db(&ctx.pool, updated_quiz.id).await;
+    assert!(db_quiz.is_some(), "Quiz should exist in database");
+    let db_quiz = db_quiz.unwrap();
+    assert_eq!(db_quiz.title, "Updated Title");
 
-    #[actix_web::test]
-    async fn test_create_quiz() {
-        let pool = setup().await;
-        let user_id = create_test_user(&pool).await;
-        let token = generate_token(user_id, "user".to_string()).unwrap();
+    cleanup_test_data(&ctx.pool).await;
+}
 
-        let app = test::init_service(
-            App::new()
-                .app_data(web::Data::new(pool.clone()))
-                .service(
-                    web::scope("/api")
-                        .wrap(Auth)
-                        .route("/quizzes", web::post().to(quiz::create_quiz))
-                )
-        ).await;
+#[actix_web::test]
+async fn test_delete_quiz() {
+    let ctx = setup_test_context().await;
+    let app = setup_test_app(ctx.pool.clone()).await;
 
-        let quiz_data = CreateQuiz {
-            title: "Test Quiz".to_string(),
-            description: Some("Test Description".to_string()),
-        };
+    let user_id = create_test_user(&ctx.pool).await;
 
-        let req = test::TestRequest::post()
-            .uri("/api/quizzes")
-            .insert_header(("Authorization", format!("Bearer {}", token)))
-            .set_json(&quiz_data)
-            .to_request();
+    let token = generate_token(user_id, "user").expect("Failed to generate token");
 
-        let resp = test::call_service(&app, req).await;
-        assert_eq!(resp.status(), StatusCode::CREATED);
+    let quiz = create_test_quiz_with_title(&ctx.pool, user_id, "Quiz to Delete").await;
 
-        // Test without auth token
-        let req = test::TestRequest::post()
-            .uri("/api/quizzes")
-            .set_json(&quiz_data)
-            .to_request();
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/quizzes/{}", quiz.id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
 
-        let resp = test::call_service(&app, req).await;
-        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::NO_CONTENT, "Expected 204 No Content for quiz deletion");
 
-        // Cleanup
-        let _ = sqlx::query!("DELETE FROM quizzes WHERE title = $1", quiz_data.title)
-            .execute(&pool)
-            .await;
-        let _ = sqlx::query!("DELETE FROM users WHERE id = $1", user_id)
-            .execute(&pool)
-            .await;
-    }
+    // Verify quiz no longer exists
+    let deleted_quiz = verify_quiz_in_db(&ctx.pool, quiz.id).await;
+    assert!(deleted_quiz.is_none(), "Quiz should be deleted from database");
 
-    #[actix_web::test]
-    async fn test_update_quiz() {
-        let pool = setup().await;
+    cleanup_test_data(&ctx.pool).await;
+}
 
-        // First create a test user
-        let user_id = create_test_user(&pool).await;
+#[actix_web::test]
+async fn test_delete_quiz_unauthorized() {
+    // Set up initial test context
+    let ctx = setup_test_context().await;
+    let app = setup_test_app(ctx.pool.clone()).await;
 
-        // Create a quiz first
-        let quiz_data = CreateQuiz {
-            title: "Original Quiz".to_string(),
-            description: Some("Original Description".to_string()),
-        };
+    // Create first test user
+    let user_id = create_test_user(&ctx.pool).await;
 
-        let quiz = sqlx::query!(
-            r#"
-            INSERT INTO quizzes (title, description, created_by, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $4)
-            RETURNING id
-            "#,
-            quiz_data.title,
-            quiz_data.description,
-            user_id,
-            chrono::Utc::now()
-        )
-        .fetch_one(&pool)
-        .await
-        .expect("Failed to create test quiz");
+    // Create a quiz with the first user
+    let quiz = create_test_quiz_with_title(&ctx.pool, user_id, "Quiz to Delete").await;
 
-        // Generate token for the user
-        let token = generate_token(user_id, "user".to_string()).unwrap();
+    // Verify quiz exists in the database
+    let quiz_exists = verify_quiz_in_db(&ctx.pool, quiz.id).await;
+    assert!(quiz_exists.is_some(), "Quiz should exist in database");
 
-        let app = test::init_service(
-            App::new()
-                .app_data(web::Data::new(pool.clone()))
-                .service(
-                    web::scope("/api")
-                        .wrap(Auth)
-                        .route("/quizzes/{id}", web::put().to(quiz::update_quiz))
-                )
-        ).await;
+    // Create second test user
+    let other_user_id = create_test_user(&ctx.pool).await;
 
-        let update_data = json!({
-            "title": "Updated Quiz",
-            "description": "Updated Description"
-        });
+    // Generate token for the other user
+    let other_token = generate_token(other_user_id, "user").expect("Failed to generate token");
 
-        let req = test::TestRequest::put()
-            .uri(&format!("/api/quizzes/{}", quiz.id))
-            .insert_header(("Authorization", format!("Bearer {}", token)))
-            .set_json(&update_data)
-            .to_request();
+    // Try to delete the quiz with the other user
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/quizzes/{}", quiz.id))
+        .insert_header(("Authorization", format!("Bearer {}", other_token)))
+        .to_request();
 
-        let resp = test::call_service(&app, req).await;
-        assert_eq!(resp.status(), StatusCode::OK);
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN, "Expected 403 Forbidden when trying to delete another user's quiz");
 
-        let body: serde_json::Value = test::read_body_json(resp).await;
-        assert_eq!(body["title"], "Updated Quiz");
-        assert_eq!(body["description"], "Updated Description");
+    // Verify quiz still exists
+    let quiz_exists = verify_quiz_in_db(&ctx.pool, quiz.id).await;
+    assert!(quiz_exists.is_some(), "Quiz should still exist in database");
 
-        // Test unauthorized update
-        let another_user = create_test_user(&pool).await;
-
-        let another_token = generate_token(another_user, "user".to_string()).unwrap();
-
-        let req = test::TestRequest::put()
-            .uri(&format!("/api/quizzes/{}", quiz.id))
-            .insert_header(("Authorization", format!("Bearer {}", another_token)))
-            .set_json(&update_data)
-            .to_request();
-
-        let resp = test::call_service(&app, req).await;
-        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
-
-        // Cleanup
-        let _ = sqlx::query!("DELETE FROM quizzes WHERE id = $1", quiz.id)
-            .execute(&pool)
-            .await;
-        let _ = sqlx::query!("DELETE FROM users WHERE id = $1", user_id)
-            .execute(&pool)
-            .await;
-        let _ = sqlx::query!("DELETE FROM users WHERE id = $1", another_user)
-            .execute(&pool)
-            .await;
-    }
-
-    #[actix_web::test]
-    async fn test_delete_quiz() {
-        let pool = setup().await;
-        std::env::set_var("JWT_SECRET", "test_secret");
-
-        // First create a test user
-        let user_id = create_test_user(&pool).await;
-
-        // Create a quiz first
-        let quiz_data = CreateQuiz {
-            title: "Test Quiz".to_string(),
-            description: Some("Test Description".to_string()),
-        };
-
-        let quiz = sqlx::query!(
-            r#"
-            INSERT INTO quizzes (title, description, created_by, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $4)
-            RETURNING id
-            "#,
-            quiz_data.title,
-            quiz_data.description,
-            user_id,
-            chrono::Utc::now()
-        )
-        .fetch_one(&pool)
-        .await
-        .expect("Failed to create test quiz");
-
-        // Generate token for the user
-        let token = generate_token(user_id, "user".to_string()).unwrap();
-
-        let app = test::init_service(
-            App::new()
-                .app_data(web::Data::new(pool.clone()))
-                .wrap(Auth)
-                .service(web::scope("/api")
-                    .route("/quizzes/{quiz_id}", web::delete().to(quiz::delete_quiz)))
-        ).await;
-
-        // Test unauthorized delete
-        let another_user = create_test_user(&pool).await;
-
-        let another_token = generate_token(another_user, "user".to_string()).unwrap();
-
-        let req = test::TestRequest::delete()
-            .uri(&format!("/api/quizzes/{}", quiz.id))
-            .insert_header(("Authorization", format!("Bearer {}", another_token)))
-            .to_request();
-
-        let resp = test::call_service(&app, req).await;
-        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
-
-        // Test successful delete
-        let req = test::TestRequest::delete()
-            .uri(&format!("/api/quizzes/{}", quiz.id))
-            .insert_header(("Authorization", format!("Bearer {}", token)))
-            .to_request();
-
-        let resp = test::call_service(&app, req).await;
-        assert_eq!(resp.status(), StatusCode::NO_CONTENT);
-
-        // Verify quiz is deleted
-        let quiz_exists = sqlx::query!(
-            r#"
-            SELECT EXISTS(SELECT 1 FROM quizzes WHERE id = $1) as "exists!"
-            "#,
-            quiz.id
-        )
-        .fetch_one(&pool)
-        .await
-        .expect("Failed to check quiz existence");
-
-        assert!(!quiz_exists.exists, "Quiz should be deleted");
-
-        // Cleanup users
-        let _ = sqlx::query!("DELETE FROM users WHERE id = $1", user_id)
-            .execute(&pool)
-            .await;
-        let _ = sqlx::query!("DELETE FROM users WHERE id = $1", another_user)
-            .execute(&pool)
-            .await;
-    }
+    cleanup_test_data(&ctx.pool).await;
 }

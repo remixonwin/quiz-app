@@ -56,7 +56,7 @@ impl DbModel for User {
         )
         .fetch_one(pool)
         .await
-        .map_err(|e| AppError::DatabaseError(e))
+        .map_err(AppError::DatabaseError)
     }
 
     async fn find_by_id(pool: &PgPool, id: i32) -> Result<Option<Self>, AppError> {
@@ -71,7 +71,7 @@ impl DbModel for User {
         )
         .fetch_optional(pool)
         .await
-        .map_err(|e| AppError::DatabaseError(e))
+        .map_err(AppError::DatabaseError)
     }
 }
 
@@ -82,10 +82,10 @@ pub struct Quiz {
     pub description: Option<String>,
     pub created_by: i32,
     pub created_at: DateTime<Utc>,
-    pub updated_at: Option<DateTime<Utc>>,
+    pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CreateQuiz {
     pub title: String,
     pub description: Option<String>,
@@ -100,17 +100,19 @@ impl DbModel for Quiz {
         sqlx::query_as!(
             Self,
             r#"
-            INSERT INTO quizzes (title, description, created_by)
-            VALUES ($1, $2, $3)
+            INSERT INTO quizzes (title, description, created_by, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5)
             RETURNING id, title, description, created_by, created_at, updated_at
             "#,
             form.title,
             form.description,
-            form.created_by
+            form.created_by,
+            Utc::now(),
+            Utc::now()
         )
         .fetch_one(pool)
         .await
-        .map_err(|e| AppError::DatabaseError(e))
+        .map_err(AppError::DatabaseError)
     }
 
     async fn find_by_id(pool: &PgPool, id: i32) -> Result<Option<Self>, AppError> {
@@ -125,7 +127,32 @@ impl DbModel for Quiz {
         )
         .fetch_optional(pool)
         .await
-        .map_err(|e| AppError::DatabaseError(e))
+        .map_err(AppError::DatabaseError)
+    }
+}
+
+impl Quiz {
+    pub async fn create(pool: &PgPool, form: CreateQuiz) -> Result<Self, AppError> {
+        let quiz = sqlx::query_as!(
+            Quiz,
+            r#"
+            INSERT INTO quizzes (title, description, created_by, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $4)
+            RETURNING id, title, description, created_by, created_at, updated_at
+            "#,
+            form.title,
+            form.description,
+            form.created_by,
+            Utc::now()
+        )
+        .fetch_one(pool)
+        .await
+        .map_err(|e| {
+            println!("Error creating quiz: {:?}", e);
+            AppError::DatabaseError(e)
+        })?;
+
+        Ok(quiz)
     }
 }
 
@@ -164,7 +191,7 @@ impl DbModel for Question {
         )
         .fetch_one(pool)
         .await
-        .map_err(|e| AppError::DatabaseError(e))
+        .map_err(AppError::DatabaseError)
     }
 
     async fn find_by_id(pool: &PgPool, id: i32) -> Result<Option<Self>, AppError> {
@@ -179,7 +206,7 @@ impl DbModel for Question {
         )
         .fetch_optional(pool)
         .await
-        .map_err(|e| AppError::DatabaseError(e))
+        .map_err(AppError::DatabaseError)
     }
 }
 
@@ -236,7 +263,7 @@ impl DbModel for Answer {
         )
         .fetch_one(pool)
         .await
-        .map_err(|e| AppError::DatabaseError(e))
+        .map_err(AppError::DatabaseError)
     }
 
     async fn find_by_id(pool: &PgPool, id: i32) -> Result<Option<Self>, AppError> {
@@ -251,7 +278,7 @@ impl DbModel for Answer {
         )
         .fetch_optional(pool)
         .await
-        .map_err(|e| AppError::DatabaseError(e))
+        .map_err(AppError::DatabaseError)
     }
 }
 
@@ -291,4 +318,9 @@ pub struct QuizAttemptResponse {
     pub completed_at: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ErrorResponse {
+    pub message: String,
 }

@@ -19,13 +19,14 @@ const QuizCreate: React.FC = () => {
     title: '',
     description: '',
     questions: [],
+    category: '',
   });
 
   const addQuestion = () => {
     setQuiz({
       ...quiz,
       questions: [
-        ...quiz.questions,
+        ...(quiz.questions || []),
         {
           question_text: '',
           question_type: 'multiple_choice',

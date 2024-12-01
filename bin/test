@@ -1,2 +1,35 @@
 #!/bin/bash
-"$QUIZ_APP_ROOT/scripts/commands.sh" test "$@"
+
+FRONTEND_DIR="quiz-app-frontend"
+BACKEND_DIR="quiz-app-backend"
+
+# Run backend tests
+test_backend() {
+    cd "$(dirname "$0")/../$BACKEND_DIR"
+    cargo test --quiet -- --test-threads=1
+    cd ..
+}
+
+# Run frontend tests
+test_frontend() {
+    cd "$(dirname "$0")/../$FRONTEND_DIR"
+    CI=true npm test
+    cd ..
+}
+
+# Handle test command
+case "${1:-all}" in
+    "frontend")
+        test_frontend
+        ;;
+    "backend")
+        test_backend
+        ;;
+    "all"|"")
+        test_backend && test_frontend
+        ;;
+    *)
+        echo "Usage: test [frontend|backend|all]"
+        exit 1
+        ;;
+esac

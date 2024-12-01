@@ -17,9 +17,12 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
         )
         .service(
             web::scope("/api/quizzes")
+                .wrap(auth::Auth)
                 .service(quiz::create_quiz)
                 .service(quiz::get_quizzes)
                 .service(quiz::get_quiz)
+                .service(quiz::update_quiz)
+                .service(quiz::delete_quiz)
                 .service(quiz::submit_quiz)
                 .service(
                     web::scope("/{quiz_id}/questions")
@@ -34,6 +37,5 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                                 .service(question::get_answers)
                         )
                 )
-                .wrap(auth::Auth)
         );
 }

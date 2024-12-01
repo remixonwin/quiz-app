@@ -19,7 +19,7 @@ pub struct UpdateQuestionRequest {
 pub async fn create_question(
     pool: web::Data<PgPool>,
     question_data: web::Json<CreateQuestion>,
-    claims: Claims,
+    _claims: Claims,
 ) -> Result<HttpResponse> {
     let question = Question::create(&pool, question_data.into_inner()).await?;
     Ok(HttpResponse::Created().json(question))

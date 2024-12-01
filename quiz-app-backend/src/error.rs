@@ -3,7 +3,6 @@ use actix_web::{
     http::StatusCode,
     HttpResponse,
 };
-use derive_more::Display;
 use serde::Serialize;
 use sqlx::error::Error as SqlxError;
 use std::convert::From;
@@ -20,8 +19,14 @@ pub enum AppError {
     #[error("Unauthorized: {0}")]
     Unauthorized(String),
 
+    #[error("Forbidden: {0}")]
+    Forbidden(String),
+
     #[error("Not Found: {0}")]
     NotFound(String),
+
+    #[error("Validation Error: {0}")]
+    ValidationError(String),
 
     #[error("Database Error: {0}")]
     DatabaseError(SqlxError),
@@ -47,15 +52,26 @@ pub enum AppError {
 
 #[derive(Serialize)]
 struct ErrorResponse {
-    message: String,
+    error: String,
 }
 
 impl ResponseError for AppError {
     fn error_response(&self) -> HttpResponse {
-        let status = self.status_code();
-        let message = self.to_string();
-        
-        HttpResponse::build(status).json(ErrorResponse { message })
+        match self {
+            AppError::InternalServerError(msg) => HttpResponse::InternalServerError().json(ErrorResponse { error: msg.clone() }),
+            AppError::BadRequest(msg) => HttpResponse::BadRequest().json(ErrorResponse { error: msg.clone() }),
+            AppError::Unauthorized(msg) => HttpResponse::Unauthorized().json(ErrorResponse { error: msg.clone() }),
+            AppError::Forbidden(msg) => HttpResponse::Forbidden().json(ErrorResponse { error: msg.clone() }),
+            AppError::NotFound(msg) => HttpResponse::NotFound().json(ErrorResponse { error: msg.clone() }),
+            AppError::ValidationError(msg) => HttpResponse::BadRequest().json(ErrorResponse { error: msg.clone() }),
+            AppError::DatabaseError(_) => HttpResponse::InternalServerError().json(ErrorResponse { error: "Database error".to_string() }),
+            AppError::BcryptError(_) => HttpResponse::InternalServerError().json(ErrorResponse { error: "Bcrypt error".to_string() }),
+            AppError::JsonWebTokenError(_) => HttpResponse::Unauthorized().json(ErrorResponse { error: "Json Web Token error".to_string() }),
+            AppError::EnvironmentVariableError(_) => HttpResponse::InternalServerError().json(ErrorResponse { error: "Environment Variable error".to_string() }),
+            AppError::JsonError(_) => HttpResponse::BadRequest().json(ErrorResponse { error: "Json error".to_string() }),
+            AppError::InvalidCredentials => HttpResponse::Unauthorized().json(ErrorResponse { error: "Invalid credentials".to_string() }),
+            AppError::TokenCreationError => HttpResponse::InternalServerError().json(ErrorResponse { error: "Token creation error".to_string() }),
+        }
     }
 
     fn status_code(&self) -> StatusCode {
@@ -63,7 +79,9 @@ impl ResponseError for AppError {
             AppError::InternalServerError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             AppError::BadRequest(_) => StatusCode::BAD_REQUEST,
             AppError::Unauthorized(_) => StatusCode::UNAUTHORIZED,
+            AppError::Forbidden(_) => StatusCode::FORBIDDEN,
             AppError::NotFound(_) => StatusCode::NOT_FOUND,
+            AppError::ValidationError(_) => StatusCode::BAD_REQUEST,
             AppError::DatabaseError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             AppError::BcryptError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             AppError::JsonWebTokenError(_) => StatusCode::UNAUTHORIZED,

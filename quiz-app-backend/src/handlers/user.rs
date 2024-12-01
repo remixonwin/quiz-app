@@ -7,7 +7,7 @@ use actix_web::{get, post, put, web, HttpResponse};
 use bcrypt::{hash, verify, DEFAULT_COST};
 use chrono::Utc;
 use serde_json::json;
-use sqlx::{postgres::PgPool, query, query_as};
+use sqlx::{postgres::PgPool, query_as};
 
 type Result<T> = std::result::Result<T, AppError>;
 

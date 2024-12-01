@@ -6,7 +6,7 @@ const Home: React.FC = () => {
   return (
     <Container maxWidth="md" style={{ marginTop: '2rem' }}>
       <Paper elevation={3} style={{ padding: '2rem' }}>
-        <Typography variant="h3" component="h1" gutterBottom>
+        <Typography variant="h3" component="h1" gutterBottom data-testid="welcome-header">
           Welcome to Quiz App
         </Typography>
         <Typography variant="h5" component="h2" gutterBottom>
@@ -20,6 +20,7 @@ const Home: React.FC = () => {
               variant="contained"
               color="primary"
               fullWidth
+              data-testid="start-quiz"
             >
               Take a Quiz
             </Button>
@@ -31,6 +32,7 @@ const Home: React.FC = () => {
               variant="contained"
               color="secondary"
               fullWidth
+              data-testid="create-quiz"
             >
               Create a Quiz
             </Button>

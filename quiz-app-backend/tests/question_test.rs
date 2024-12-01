@@ -25,7 +25,7 @@ mod question_tests {
     async fn test_create_question() {
         let pool = setup().await;
         let user_id = create_test_user(&pool).await;
-        let token = generate_token(user_id, "user".to_string()).unwrap();
+        let token = generate_token(user_id, "user").unwrap();
         let quiz_id = create_test_quiz(&pool, user_id).await;
 
         let app = test::init_service(
@@ -35,9 +35,9 @@ mod question_tests {
                     web::scope("/api")
                         .wrap(Auth)
                         .service(
-                            web::scope("/quizzes")
-                                .route("/{quiz_id}/questions", web::post().to(question::create_question))
-                                .route("/{quiz_id}/questions", web::get().to(question::list_questions))
+                            web::scope("/quizzes/{quiz_id}/questions")
+                                .service(question::create_question)
+                                .service(question::list_questions)
                         )
                 )
         ).await;
@@ -72,18 +72,16 @@ mod question_tests {
     async fn create_test_user(pool: &PgPool) -> i32 {
         let new_user = CreateUser {
             username: "testuser".to_string(),
-            email: "test@example.com".to_string(),
             password: "password123".to_string(),
         };
 
         sqlx::query!(
             r#"
-            INSERT INTO users (username, email, password_hash, created_at)
-            VALUES ($1, $2, $3, $4)
+            INSERT INTO users (username, password_hash, created_at)
+            VALUES ($1, $2, $3)
             RETURNING id
             "#,
             new_user.username,
-            new_user.email,
             new_user.password,
             Utc::now()
         )
@@ -97,6 +95,7 @@ mod question_tests {
         let quiz_data = CreateQuiz {
             title: "Test Quiz".to_string(),
             description: Some("Test Description".to_string()),
+            created_by: user_id,
         };
 
         sqlx::query!(
@@ -107,7 +106,7 @@ mod question_tests {
             "#,
             quiz_data.title,
             quiz_data.description,
-            user_id,
+            quiz_data.created_by,
             Utc::now()
         )
         .fetch_one(pool)

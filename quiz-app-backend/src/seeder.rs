@@ -1,30 +1,30 @@
 use sqlx::PgPool;
-use crate::models::{Quiz, Question, Answer};
+use crate::models::Answer;
 
-#[derive(Debug)]
+#[allow(dead_code)]
 struct QuizData {
     title: String,
     description: String,
     questions: Vec<QuestionData>,
 }
 
-#[derive(Debug)]
+#[allow(dead_code)]
 struct QuestionData {
-    question_text: String,
-    options: Vec<String>,
-    correct_answer: String,
+    text: String,
+    points: i32,
+    answers: Vec<Answer>,
 }
 
+#[allow(dead_code)]
 pub async fn seed_database(pool: &PgPool) -> Result<(), Box<dyn std::error::Error>> {
     // Create a test user
     let user = sqlx::query!(
         r#"
-        INSERT INTO users (username, email, password_hash, role)
-        VALUES ($1, $2, $3, 'user')
+        INSERT INTO users (username, password_hash, role)
+        VALUES ($1, $2, 'user')
         RETURNING id
         "#,
         "testuser",
-        "test@example.com",
         "hashed_password" // In production, use proper password hashing
     )
     .fetch_one(pool)

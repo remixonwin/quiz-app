@@ -1,0 +1,24 @@
+{
+  "name": "quizmo",
+  "appPanels": {
+    "suite": {
+      "panes": []
+    },
+    "settings": {
+      "panes": []
+    }
+  },
+  "groups": {},
+  "savedAt": 1733024543,
+  "modified": false,
+  "lastOpenSuite": "",
+  "variables": {},
+  "targets": {},
+  "environments": [
+    "test",
+    "stage",
+    "production"
+  ],
+  "projectDirectory": "/home/remixonwin/Documents/quiz-app/quizmo",
+  "puppetry": "3.2.6"
+}

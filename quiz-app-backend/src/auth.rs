@@ -1,128 +1,93 @@
 use actix_web::{
-    dev::{Payload, Service, ServiceRequest, ServiceResponse, Transform},
-    error::ErrorUnauthorized,
-    http::header::HeaderValue,
-    Error, FromRequest, HttpRequest, HttpMessage,
+    dev::{Service, ServiceRequest, ServiceResponse, Transform},
+    Error, FromRequest, HttpMessage, HttpRequest,
 };
 use futures::{
-    future::{err, ok, Ready, ready},
-    Future,
+    future::{ok, Ready},
+    FutureExt,
 };
 use std::{
-    env,
     pin::Pin,
     task::{Context, Poll},
 };
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
 use crate::error::AppError;
-use chrono::{Duration, Utc};
+use chrono::{Duration, Utc, NaiveDateTime};
+use uuid::Uuid;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Claims {
-    pub user_id: i32,
-    pub role: String,
+    pub sub: String,
     pub exp: usize,
+    pub user_id: Uuid, // Changed from i32 to Uuid
+    pub role: String,
 }
 
 #[allow(dead_code)]
 pub trait AuthService {
-    fn generate_token(user_id: i32, role: String) -> Result<String, AppError>;
+    fn generate_token(user_id: Uuid, role: &str) -> Result<String, AppError>;
+    fn decode_token(token: &str) -> Result<Claims, AppError>;
 }
 
 pub struct JwtAuthService;
 
 impl AuthService for JwtAuthService {
-    fn generate_token(user_id: i32, role: String) -> Result<String, AppError> {
-        if user_id <= 0 {
-            return Err(AppError::ValidationError("Invalid user ID".to_string()));
-        }
-
+    fn generate_token(user_id: Uuid, role: &str) -> Result<String, AppError> { // Changed user_id type
         let expiration = Utc::now()
-            .checked_add_signed(Duration::hours(24))
+            .checked_add_signed(Duration::days(1))
             .expect("valid timestamp")
-            .timestamp() as usize;
+            .timestamp();
 
         let claims = Claims {
-            user_id,
-            role,
-            exp: expiration,
+            sub: "auth".to_string(),
+            exp: expiration as usize,
+            user_id, // Now Uuid
+            role: role.to_string(),
         };
 
-        let secret = env::var("JWT_SECRET").expect("JWT_SECRET must be set");
         encode(
             &Header::default(),
             &claims,
-            &EncodingKey::from_secret(secret.as_bytes()),
+            &EncodingKey::from_secret(std::env::var("JWT_SECRET").unwrap().as_ref()),
         )
-        .map_err(|_| AppError::InternalServerError("Failed to create token".to_string()))
+        .map_err(|_| AppError::TokenCreation)
+    }
+
+    fn decode_token(token: &str) -> Result<Claims, AppError> {
+        decode::<Claims>(
+            token,
+            &DecodingKey::from_secret(std::env::var("JWT_SECRET").unwrap().as_ref()),
+            &Validation::default(),
+        )
+        .map(|data| data.claims)
+        .map_err(|_| AppError::InvalidToken)
     }
 }
 
-pub fn generate_token(user_id: i32, role: &str) -> Result<String, AppError> {
-    if user_id <= 0 {
-        return Err(AppError::ValidationError("Invalid user ID".to_string()));
-    }
-
-    let expiration = Utc::now()
-        .checked_add_signed(chrono::Duration::hours(24))
-        .expect("valid timestamp")
-        .timestamp();
-
-    let claims = Claims {
-        user_id,
-        role: role.to_string(),
-        exp: expiration as usize,
-    };
-
-    let token = jsonwebtoken::encode(
-        &Header::default(),
-        &claims,
-        &EncodingKey::from_secret(env::var("JWT_SECRET").expect("JWT_SECRET must be set").as_bytes()),
-    )
-    .map_err(|_| AppError::TokenCreationError)?;
-
-    Ok(token)
+pub fn generate_token(user_id: Uuid, role: &str) -> Result<String, AppError> { // Changed user_id type
+    JwtAuthService::generate_token(user_id, role)
 }
 
 impl FromRequest for Claims {
-    type Error = Error;
+    type Error = AppError;
     type Future = Ready<Result<Self, Self::Error>>;
 
-    fn from_request(req: &HttpRequest, _: &mut Payload) -> Self::Future {
-        println!("=== Processing auth request ===");
-        let auth_header: Option<&HeaderValue> = req.headers().get("Authorization");
+    fn from_request(req: &HttpRequest, _: &mut actix_web::dev::Payload) -> Self::Future {
+        let token = req
+            .headers()
+            .get("Authorization")
+            .and_then(|h| h.to_str().ok())
+            .and_then(|s| s.strip_prefix("Bearer "));
 
-        match auth_header {
-            Some(auth_str) => {
-                println!("Found auth header: {:?}", auth_str);
-                let auth_str = auth_str.to_str().unwrap_or("");
-                if !auth_str.starts_with("Bearer ") {
-                    println!("Invalid token format");
-                    return err(ErrorUnauthorized("Invalid token format"));
+        match token {
+            Some(token) => {
+                match JwtAuthService::decode_token(token) {
+                    Ok(claims) => ok(Ok(claims)),
+                    Err(_) => ok(Err(AppError::InvalidToken)),
                 }
-
-                let token = &auth_str[7..];
-                let secret = env::var("JWT_SECRET").expect("JWT_SECRET must be set");
-                match decode::<Claims>(
-                    token,
-                    &DecodingKey::from_secret(secret.as_bytes()),
-                    &Validation::default(),
-                ) {
-                    Ok(data) => {
-                        println!("Token decoded successfully: {:?}", data.claims);
-                        ok(data.claims)
-                    },
-                    Err(e) => {
-                        println!("Token validation error: {:?}", e);
-                        err(ErrorUnauthorized("Invalid token"))
-                    },
-                }
-            }
-            None => {
-                println!("No authorization header found");
-                err(ErrorUnauthorized("No authorization header"))
-            }
+            },
+            None => ok(Err(AppError::MissingToken)),
         }
     }
 }
@@ -136,84 +101,37 @@ where
 {
     type Response = ServiceResponse<B>;
     type Error = Error;
-    type Transform = AuthMiddlewareService<S>;
+    type Transform = AuthMiddleware<S>;
     type InitError = ();
     type Future = Ready<Result<Self::Transform, Self::InitError>>;
 
     fn new_transform(&self, service: S) -> Self::Future {
-        ok(AuthMiddlewareService { service })
+        ok(AuthMiddleware { service })
     }
 }
 
 pub struct AuthMiddleware<S> {
-    #[allow(dead_code)]
     service: S,
 }
 
-impl<S> AuthMiddleware<S> {
-    #[allow(dead_code)]
-    pub fn new(service: S) -> Self {
-        Self { service }
-    }
-}
-
-impl<S, B> Transform<S, ServiceRequest> for AuthMiddleware<S>
+impl<S, B> Service<ServiceRequest> for AuthMiddleware<S>
 where
     S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + 'static,
     B: 'static,
 {
     type Response = ServiceResponse<B>;
     type Error = Error;
-    type Transform = AuthMiddlewareService<S>;
-    type InitError = ();
-    type Future = Ready<Result<Self::Transform, Self::InitError>>;
-
-    fn new_transform(&self, service: S) -> Self::Future {
-        ok(AuthMiddlewareService { service })
-    }
-}
-
-pub struct AuthMiddlewareService<S> {
-    service: S,
-}
-
-impl<S, B> Service<ServiceRequest> for AuthMiddlewareService<S>
-where
-    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + 'static,
-    B: 'static,
-{
-    type Response = ServiceResponse<B>;
-    type Error = Error;
-    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>>>>;
+    type Future = Pin<Box<dyn futures::Future<Output = Result<Self::Response, Self::Error>>>>;
 
     fn poll_ready(&self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.service.poll_ready(cx)
     }
 
     fn call(&self, req: ServiceRequest) -> Self::Future {
-        let auth_header = req.headers().get("Authorization");
-        if let Some(auth_header) = auth_header {
-            if let Ok(auth_str) = auth_header.to_str() {
-                if auth_str.starts_with("Bearer ") {
-                    let token = auth_str.trim_start_matches("Bearer ").trim();
-                    let secret = env::var("JWT_SECRET").expect("JWT_SECRET must be set");
-                    match decode::<Claims>(
-                        token,
-                        &DecodingKey::from_secret(secret.as_bytes()),
-                        &Validation::default(),
-                    ) {
-                        Ok(data) => {
-                            req.extensions_mut().insert(data.claims);
-                            return Box::pin(self.service.call(req));
-                        }
-                        Err(e) => {
-                            println!("Token validation error: {:?}", e);
-                            return Box::pin(ready(Err(ErrorUnauthorized("Invalid token"))))
-                        }
-                    }
-                }
-            }
-        }
-        Box::pin(ready(Err(ErrorUnauthorized("Missing or invalid authorization header"))))
+        let fut = self.service.call(req);
+        Box::pin(async move {
+            let res = fut.await?;
+            Ok(res)
+        })
     }
 }

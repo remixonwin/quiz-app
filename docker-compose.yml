@@ -1,0 +1,23 @@
+version: '3'
+services:
+  app:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    network_mode: "host"
+    ports:
+      - "3000:3000"
+      - "8080:8080"
+    environment:
+      - NODE_ENV=development
+    volumes:
+      - cargo-cache:/usr/local/cargo/registry
+      - target-cache:/app/quiz-app-backend/target
+    command: ./quiz-app-backend serve
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+
+volumes:
+  cargo-cache:
+  target-cache:

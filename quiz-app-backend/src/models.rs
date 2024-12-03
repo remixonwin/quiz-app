@@ -1,24 +1,25 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Utc, NaiveDateTime};
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgPool};
 use async_trait::async_trait;
 use crate::error::AppError;
+use uuid::Uuid;
 
 #[async_trait]
 pub trait DbModel {
     type CreateForm;
     async fn create(pool: &PgPool, form: Self::CreateForm) -> Result<Self, AppError> where Self: Sized;
-    async fn find_by_id(pool: &PgPool, id: i32) -> Result<Option<Self>, AppError> where Self: Sized;
+    async fn find_by_id(pool: &PgPool, id: Uuid) -> Result<Option<Self>, AppError> where Self: Sized;
 }
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
 pub struct User {
-    pub id: i32,
+    pub id: Uuid, // Changed from i32 to Uuid
     pub username: String,
     pub password_hash: String,
     pub role: String,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -59,7 +60,7 @@ impl DbModel for User {
         .map_err(AppError::DatabaseError)
     }
 
-    async fn find_by_id(pool: &PgPool, id: i32) -> Result<Option<Self>, AppError> {
+    async fn find_by_id(pool: &PgPool, id: Uuid) -> Result<Option<Self>, AppError> {
         sqlx::query_as!(
             Self,
             r#"
@@ -75,21 +76,21 @@ impl DbModel for User {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, FromRow)]
 pub struct Quiz {
-    pub id: i32,
+    pub id: Uuid, // Changed from i32 to Uuid
     pub title: String,
     pub description: Option<String>,
-    pub created_by: i32,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_by: Uuid, // Changed from i32 to Uuid
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CreateQuiz {
     pub title: String,
     pub description: Option<String>,
-    pub created_by: i32,
+    pub created_by: Uuid, // Changed from i32 to Uuid
 }
 
 #[async_trait]
@@ -115,7 +116,7 @@ impl DbModel for Quiz {
         .map_err(AppError::DatabaseError)
     }
 
-    async fn find_by_id(pool: &PgPool, id: i32) -> Result<Option<Self>, AppError> {
+    async fn find_by_id(pool: &PgPool, id: Uuid) -> Result<Option<Self>, AppError> {
         sqlx::query_as!(
             Self,
             r#"
@@ -136,13 +137,14 @@ impl Quiz {
         let quiz = sqlx::query_as!(
             Quiz,
             r#"
-            INSERT INTO quizzes (title, description, created_by, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $4)
+            INSERT INTO quizzes (title, description, created_by, created_at, updated_at)  
+            VALUES ($1, $2, $3, $4, $5)
             RETURNING id, title, description, created_by, created_at, updated_at
             "#,
             form.title,
             form.description,
             form.created_by,
+            Utc::now(),
             Utc::now()
         )
         .fetch_one(pool)
@@ -158,17 +160,17 @@ impl Quiz {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Question {
-    pub id: i32,
-    pub quiz_id: i32,
+    pub id: Uuid, // Changed from i32 to Uuid
+    pub quiz_id: Uuid, // Changed from i32 to Uuid
     pub question_text: String,
     pub order_num: i32,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CreateQuestion {
-    pub quiz_id: i32,
+    pub quiz_id: Uuid, // Changed from i32 to Uuid
     pub question_text: String,
     pub order_num: Option<i32>,
 }
@@ -194,7 +196,7 @@ impl DbModel for Question {
         .map_err(AppError::DatabaseError)
     }
 
-    async fn find_by_id(pool: &PgPool, id: i32) -> Result<Option<Self>, AppError> {
+    async fn find_by_id(pool: &PgPool, id: Uuid) -> Result<Option<Self>, AppError> {
         sqlx::query_as!(
             Self,
             r#"
@@ -211,7 +213,7 @@ impl DbModel for Question {
 }
 
 impl Question {
-    pub async fn find_by_quiz_id(pool: &PgPool, quiz_id: i32) -> Result<Vec<Question>, sqlx::Error> {
+    pub async fn find_by_quiz_id(pool: &PgPool, quiz_id: Uuid) -> Result<Vec<Question>, sqlx::Error> {
         sqlx::query_as!(
             Question,
             r#"
@@ -225,21 +227,54 @@ impl Question {
         .fetch_all(pool)
         .await
     }
+
+    async fn create(pool: &PgPool, form: CreateQuestion) -> Result<Self, AppError> {
+        sqlx::query_as!(
+            Self,
+            r#"
+            INSERT INTO questions (quiz_id, question_text, order_num)  -- Changed from text to question_text
+            VALUES ($1, $2, $3)
+            RETURNING *
+            "#,
+            form.quiz_id,
+            form.question_text,
+            form.order_num.unwrap_or(0)
+        )
+        .fetch_one(pool)
+        .await
+        .map_err(AppError::DatabaseError)
+    }
+
+    async fn find_by_id(pool: &PgPool, id: Uuid) -> Result<Option<Self>, AppError> {
+        sqlx::query_as!(
+            Self,
+            r#"
+            SELECT id, quiz_id, question_text, order_num, created_at, updated_at
+            FROM questions 
+            WHERE id = $1
+            "#,
+            id
+        )
+        .fetch_optional(pool)
+        .await
+        .map_err(AppError::DatabaseError)
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Answer {
-    pub id: i32,
-    pub question_id: i32,
+    pub id: Uuid, // Changed from i32 to Uuid
+    pub question_id: Uuid, // Changed from i32 to Uuid
     pub text: String,
     pub is_correct: bool,
     pub order_num: i32,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CreateAnswer {
+    pub question_id: Uuid, // Changed from i32 to Uuid
     pub text: String,
     pub is_correct: bool,
 }
@@ -256,21 +291,56 @@ impl DbModel for Answer {
             VALUES ($1, $2, $3, $4)
             RETURNING id, question_id, text, is_correct, order_num, created_at, updated_at
             "#,
-            0, // default question_id
+            form.question_id,
             form.text,
             form.is_correct,
-            0 // default order_num
+            0  // default order_num
         )
         .fetch_one(pool)
         .await
         .map_err(AppError::DatabaseError)
     }
 
-    async fn find_by_id(pool: &PgPool, id: i32) -> Result<Option<Self>, AppError> {
+    async fn find_by_id(pool: &PgPool, id: Uuid) -> Result<Option<Self>, AppError> {
         sqlx::query_as!(
             Self,
             r#"
             SELECT id, question_id, text, is_correct, order_num, created_at, updated_at
+            FROM answers
+            WHERE id = $1
+            "#,
+            id
+        )
+        .fetch_optional(pool)
+        .await
+        .map_err(AppError::DatabaseError)
+    }
+}
+
+impl Answer {
+    async fn create(pool: &PgPool, form: CreateAnswer) -> Result<Self, AppError> {
+        sqlx::query_as!(
+            Self,
+            r#"
+            INSERT INTO answers (question_id, text, is_correct, order_num)  -- Changed from answer_text to text
+            VALUES ($1, $2, $3, $4)
+            RETURNING *
+            "#,
+            form.question_id,
+            form.text,
+            form.is_correct,
+            0
+        )
+        .fetch_one(pool)
+        .await
+        .map_err(AppError::DatabaseError)
+    }
+
+    async fn find_by_id(pool: &PgPool, id: Uuid) -> Result<Option<Self>, AppError> {
+        sqlx::query_as!(
+            Self,
+            r#"
+            SELECT id, question_id, text as answer_text, is_correct, order_num, created_at, updated_at  -- Added alias for text
             FROM answers
             WHERE id = $1
             "#,
@@ -289,14 +359,13 @@ pub struct QuizSubmission {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SubmittedAnswer {
-    pub question_id: i32,
-    pub selected_answer_id: i32,
+    pub question_id: Uuid, // Changed from i32 to Uuid
+    pub selected_answer_id: Uuid, // Changed from i32 to Uuid
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UserAnswer {
-    pub question_id: i32,
-    pub selected_option: String,
+    pub question_id: Uuid, // Changed from i32 to Uuid
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -305,9 +374,9 @@ pub struct QuizAttempt {
     pub user_id: i32,
     pub quiz_id: i32,
     pub score: Option<i32>,
-    pub completed_at: Option<DateTime<Utc>>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub completed_at: Option<NaiveDateTime>,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -315,9 +384,9 @@ pub struct QuizAttemptResponse {
     pub id: i32,
     pub quiz_id: i32,
     pub user_id: i32,
-    pub completed_at: DateTime<Utc>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub completed_at: NaiveDateTime,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

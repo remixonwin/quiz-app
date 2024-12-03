@@ -43,3 +43,9 @@ export interface QuizFormProps {
     onSubmit: (quiz: CreateQuiz) => void;
     isLoading?: boolean;
 }
+
+export interface SubmittedAnswer {
+    question_id: number;
+    answer_id: number;
+    is_correct: boolean;
+}

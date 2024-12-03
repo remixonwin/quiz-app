@@ -48,6 +48,18 @@ pub enum AppError {
 
     #[error("Token Creation Error")]
     TokenCreationError,
+
+    #[error("Token creation error")]
+    TokenCreation,
+
+    #[error("Invalid token")]
+    InvalidToken,
+
+    #[error("Missing token")]
+    MissingToken,
+
+    #[error("Hash error")]
+    HashError,
 }
 
 #[derive(Serialize)]
@@ -58,19 +70,29 @@ struct ErrorResponse {
 impl ResponseError for AppError {
     fn error_response(&self) -> HttpResponse {
         match self {
-            AppError::InternalServerError(msg) => HttpResponse::InternalServerError().json(ErrorResponse { error: msg.clone() }),
+            AppError::InternalServerError(msg) => {
+                println!("Internal Server Error: {}", msg); // Log the error
+                HttpResponse::InternalServerError().json(ErrorResponse { error: msg.clone() })
+            },
             AppError::BadRequest(msg) => HttpResponse::BadRequest().json(ErrorResponse { error: msg.clone() }),
             AppError::Unauthorized(msg) => HttpResponse::Unauthorized().json(ErrorResponse { error: msg.clone() }),
             AppError::Forbidden(msg) => HttpResponse::Forbidden().json(ErrorResponse { error: msg.clone() }),
             AppError::NotFound(msg) => HttpResponse::NotFound().json(ErrorResponse { error: msg.clone() }),
             AppError::ValidationError(msg) => HttpResponse::BadRequest().json(ErrorResponse { error: msg.clone() }),
-            AppError::DatabaseError(_) => HttpResponse::InternalServerError().json(ErrorResponse { error: "Database error".to_string() }),
+            AppError::DatabaseError(e) => {
+                println!("Database Error: {:?}", e); // Log database errors
+                HttpResponse::InternalServerError().json(ErrorResponse { error: "Database error".to_string() })
+            },
             AppError::BcryptError(_) => HttpResponse::InternalServerError().json(ErrorResponse { error: "Bcrypt error".to_string() }),
             AppError::JsonWebTokenError(_) => HttpResponse::Unauthorized().json(ErrorResponse { error: "Json Web Token error".to_string() }),
             AppError::EnvironmentVariableError(_) => HttpResponse::InternalServerError().json(ErrorResponse { error: "Environment Variable error".to_string() }),
             AppError::JsonError(_) => HttpResponse::BadRequest().json(ErrorResponse { error: "Json error".to_string() }),
             AppError::InvalidCredentials => HttpResponse::Unauthorized().json(ErrorResponse { error: "Invalid credentials".to_string() }),
             AppError::TokenCreationError => HttpResponse::InternalServerError().json(ErrorResponse { error: "Token creation error".to_string() }),
+            AppError::TokenCreation => HttpResponse::InternalServerError().json(ErrorResponse { error: "Token creation error".to_string() }),
+            AppError::InvalidToken => HttpResponse::Unauthorized().json(ErrorResponse { error: "Invalid token".to_string() }),
+            AppError::MissingToken => HttpResponse::Unauthorized().json(ErrorResponse { error: "Missing token".to_string() }),
+            AppError::HashError => HttpResponse::InternalServerError().json(ErrorResponse { error: "Hash error".to_string() }),
         }
     }
 
@@ -89,6 +111,10 @@ impl ResponseError for AppError {
             AppError::JsonError(_) => StatusCode::BAD_REQUEST,
             AppError::InvalidCredentials => StatusCode::UNAUTHORIZED,
             AppError::TokenCreationError => StatusCode::INTERNAL_SERVER_ERROR,
+            AppError::TokenCreation => StatusCode::INTERNAL_SERVER_ERROR,
+            AppError::InvalidToken => StatusCode::UNAUTHORIZED,
+            AppError::MissingToken => StatusCode::UNAUTHORIZED,
+            AppError::HashError => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }

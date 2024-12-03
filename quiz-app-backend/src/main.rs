@@ -12,6 +12,7 @@ use actix_web::{
 use actix_cors::Cors;
 use sqlx::postgres::PgPoolOptions;
 use std::env;
+use dotenv::dotenv;
 
 use crate::{
     handlers::{quiz, user},
@@ -26,6 +27,7 @@ async fn health_check() -> HttpResponse {
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    dotenv().ok();
     env_logger::init();
 
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
@@ -36,7 +38,10 @@ async fn main() -> std::io::Result<()> {
         .await
         .expect("Failed to create pool");
 
-    println!("Starting server at http://127.0.0.1:8080");
+    let port = std::env::var("PORT").unwrap_or_else(|_| "8080".to_string());
+    let address = format!("0.0.0.0:{}", port);
+
+    println!("Starting server at {}", address);
 
     HttpServer::new(move || {
         let cors = Cors::default()
@@ -69,7 +74,7 @@ async fn main() -> std::io::Result<()> {
                     )
             )
     })
-    .bind("127.0.0.1:8080")?
+    .bind(address)?
     .run()
     .await
 }

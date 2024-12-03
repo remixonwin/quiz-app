@@ -1,5 +1,5 @@
 use sqlx::PgPool;
-use chrono;
+use chrono::{self, NaiveDateTime};
 use crate::{
     routes::configure_routes,
     models::Quiz,
@@ -14,12 +14,12 @@ use actix_web::{
     Error,
 };
 use actix_http::Request;
-use uuid::Uuid;
 use bcrypt;
+use uuid::Uuid;
 
 pub struct TestContext {
     pub pool: PgPool,
-    pub user_id: i32,
+    pub user_id: Uuid, // Changed from i32 to Uuid
     pub token: String,
 }
 
@@ -27,60 +27,56 @@ pub fn init_test_env() {
     std::env::set_var("JWT_SECRET", "test_secret_key_for_quiz_app_tests");
 }
 
-pub async fn create_test_user(pool: &PgPool) -> i32 {
+pub async fn create_test_user(pool: &PgPool) -> Uuid { // Changed return type from i32 to Uuid
     let now = chrono::Utc::now();
-    let unique_id = Uuid::new_v4();
-    let username = format!("test_user_{}", unique_id);
+    let username = format!("test_user_{}", uuid::Uuid::new_v4());
     let password = bcrypt::hash("test_password123", bcrypt::DEFAULT_COST)
         .expect("Failed to hash password");
     
-    let user_id = sqlx::query!(
+    let user_id: Uuid = sqlx::query_scalar!(
         r#"
-        INSERT INTO users (username, password_hash, created_at, updated_at)
-        VALUES ($1, $2, $3, $3)
+        INSERT INTO users (username, password_hash, role)
+        VALUES ($1, $2, 'test')
         RETURNING id
         "#,
         username,
-        password,
-        now
+        password
     )
     .fetch_one(pool)
     .await
-    .expect("Failed to create test user")
-    .id;
+    .unwrap();
 
     user_id
 }
 
-pub async fn create_test_quiz(pool: &PgPool, user_id: i32) -> Quiz {
-    let now = chrono::Utc::now();
-    let quiz = sqlx::query_as!(
-        Quiz,
+pub async fn create_test_quiz(pool: &PgPool, user_id: Uuid) -> Uuid { // Changed id type to Uuid
+    let now = NaiveDateTime::from_timestamp(chrono::Utc::now().timestamp(), 0); // Use NaiveDateTime
+    let quiz_id: Uuid = sqlx::query_scalar!(
         r#"
         INSERT INTO quizzes (title, description, created_by, created_at, updated_at)
         VALUES ($1, $2, $3, $4, $4)
-        RETURNING id, title, description, created_by, created_at, updated_at
+        RETURNING id
         "#,
         "Test Quiz",
-        "A test quiz description",
+        "A quiz for testing",
         user_id,
         now
     )
     .fetch_one(pool)
     .await
-    .expect("Failed to create test quiz");
+    .unwrap();
 
-    quiz
+    quiz_id
 }
 
-pub async fn create_test_quiz_with_title(pool: &PgPool, user_id: i32, title: &str) -> Quiz {
+pub async fn create_test_quiz_with_title(pool: &PgPool, user_id: Uuid, title: &str) -> Quiz {
     let now = chrono::Utc::now();
     let quiz = sqlx::query_as!(
         Quiz,
         r#"
-        INSERT INTO quizzes (title, description, created_by, created_at, updated_at)
+        INSERT INTO quizzes (title, description, creator_id, created_at, updated_at)
         VALUES ($1, $2, $3, $4, $4)
-        RETURNING id, title, description, created_by, created_at, updated_at
+        RETURNING id, title, description, creator_id, created_at, updated_at
         "#,
         title,
         "A test quiz description",
@@ -132,11 +128,11 @@ pub async fn cleanup_test_data(pool: &PgPool) {
     assert_eq!(user_count, 0, "Failed to clean up all users");
 }
 
-pub async fn verify_quiz_in_db(pool: &PgPool, quiz_id: i32) -> Option<Quiz> {
+pub async fn verify_quiz_in_db(pool: &PgPool, quiz_id: Uuid) -> Option<Quiz> {
     sqlx::query_as!(
         Quiz,
         r#"
-        SELECT id, title, description, created_by, created_at, updated_at
+        SELECT id, title, description, creator_id, created_at, updated_at
         FROM quizzes 
         WHERE id = $1
         "#,
@@ -177,12 +173,11 @@ pub async fn setup_test_context() -> TestContext {
 
     // Create test user
     let now = chrono::Utc::now();
-    let unique_id = Uuid::new_v4();
-    let username = format!("test_user_{}", unique_id);
+    let username = format!("test_user_{}", uuid::Uuid::new_v4());
     let password = bcrypt::hash("test_password123", bcrypt::DEFAULT_COST)
         .expect("Failed to hash password");
     
-    let user_id = sqlx::query!(
+    let user_id = sqlx::query_scalar!(
         r#"
         INSERT INTO users (username, password_hash, created_at, updated_at)
         VALUES ($1, $2, $3, $3)
@@ -194,8 +189,7 @@ pub async fn setup_test_context() -> TestContext {
     )
     .fetch_one(&pool)
     .await
-    .expect("Failed to create test user")
-    .id;
+    .expect("Failed to create test user");
 
     // Verify user was created
     let user_exists = sqlx::query!(

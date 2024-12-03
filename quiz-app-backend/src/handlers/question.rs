@@ -6,6 +6,8 @@ use crate::{
 use actix_web::{delete, get, post, put, web, HttpResponse};
 use sqlx::PgPool;
 use serde::{Serialize, Deserialize};
+use chrono::NaiveDateTime;
+use uuid::Uuid;
 
 type Result<T> = std::result::Result<T, AppError>;
 
@@ -28,7 +30,7 @@ pub async fn create_question(
 #[get("/{question_id}")]
 pub async fn get_question(
     pool: web::Data<PgPool>,
-    question_id: web::Path<i32>,
+    question_id: web::Path<Uuid>, // Changed from i32 to Uuid
 ) -> Result<HttpResponse> {
     let question = Question::find_by_id(&pool, question_id.into_inner()).await?;
     match question {
@@ -40,7 +42,7 @@ pub async fn get_question(
 #[get("")]
 pub async fn list_questions(
     pool: web::Data<PgPool>,
-    quiz_id: web::Path<i32>,
+    quiz_id: web::Path<Uuid>, // Changed from i32 to Uuid
 ) -> Result<HttpResponse> {
     let questions = Question::find_by_quiz_id(&pool, quiz_id.into_inner()).await?;
     Ok(HttpResponse::Ok().json(questions))
@@ -49,11 +51,11 @@ pub async fn list_questions(
 #[put("/{question_id}")]
 pub async fn update_question(
     pool: web::Data<PgPool>,
-    path: web::Path<(i32, i32)>,
+    path: web::Path<(Uuid, Uuid)>, // Changed from (i32, i32) to (Uuid, Uuid)
     question_data: web::Json<UpdateQuestionRequest>,
     claims: Claims,
 ) -> Result<HttpResponse> {
-    let (_quiz_id, question_id) = path.into_inner();
+    let (quiz_id, question_id) = path.into_inner();
     
     // Check if the user is the creator of the quiz
     let quiz = sqlx::query!(
@@ -62,7 +64,7 @@ pub async fn update_question(
         FROM quizzes
         WHERE id = $1
         "#,
-        _quiz_id
+        quiz_id
     )
     .fetch_one(&**pool)
     .await?;
@@ -76,15 +78,16 @@ pub async fn update_question(
         r#"
         UPDATE questions
         SET question_text = $1,
-            order_num = COALESCE($2, order_num),
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = $3 AND quiz_id = $4
+            order_num = $2,
+            updated_at = $3
+        WHERE id = $4 AND quiz_id = $5
         RETURNING id, quiz_id, question_text, order_num, created_at, updated_at
         "#,
         question_data.question_text,
-        question_data.order_num,
+        question_data.order_num.unwrap_or(0),
+        NaiveDateTime::from_timestamp(Utc::now().timestamp(), 0),
         question_id,
-        _quiz_id
+        quiz_id
     )
     .fetch_one(&**pool)
     .await?;
@@ -95,24 +98,24 @@ pub async fn update_question(
 #[delete("/{question_id}")]
 pub async fn delete_question(
     pool: web::Data<PgPool>,
-    path: web::Path<(i32, i32)>,
+    path: web::Path<(Uuid, Uuid)>, // Changed from (i32, i32) to (Uuid, Uuid)
     claims: Claims,
 ) -> Result<HttpResponse> {
-    let (_quiz_id, question_id) = path.into_inner();
+    let (quiz_id, question_id) = path.into_inner();
 
     // Check if the user is the creator of the quiz
     let quiz = sqlx::query!(
         r#"
-        SELECT created_by
+        SELECT creator_id
         FROM quizzes
         WHERE id = $1
         "#,
-        _quiz_id
+        quiz_id
     )
     .fetch_one(&**pool)
     .await?;
 
-    if quiz.created_by != claims.user_id {
+    if quiz.creator_id != claims.user_id {
         return Err(AppError::Unauthorized("Not authorized to delete questions from this quiz".into()));
     }
 
@@ -122,7 +125,7 @@ pub async fn delete_question(
         WHERE id = $1 AND quiz_id = $2
         "#,
         question_id,
-        _quiz_id
+        quiz_id
     )
     .execute(&**pool)
     .await?;
@@ -137,56 +140,16 @@ pub async fn delete_question(
 #[post("/{question_id}/answers")]
 pub async fn create_answer(
     pool: web::Data<PgPool>,
-    path: web::Path<(i32, i32)>,
+    path: web::Path<(Uuid, Uuid)>, // Changed from (i32, i32) to (Uuid, Uuid)
     answer_data: web::Json<CreateAnswer>,
     claims: Claims,
 ) -> Result<HttpResponse> {
-    let (_quiz_id, question_id) = path.into_inner();
+    let (quiz_id, question_id) = path.into_inner();
 
-    // Check if the user is the creator of the quiz
-    let quiz = sqlx::query!(
-        r#"
-        SELECT created_by
-        FROM quizzes
-        WHERE id = $1
-        "#,
-        _quiz_id
-    )
-    .fetch_one(&**pool)
-    .await?;
+    let mut create_answer = answer_data.into_inner();
+    create_answer.question_id = question_id; // Assigning question_id from path
 
-    if quiz.created_by != claims.user_id {
-        return Err(AppError::Unauthorized("Not authorized to add answers to this quiz".into()));
-    }
-
-    // Get the maximum order number for this question
-    let max_order = sqlx::query!(
-        r#"
-        SELECT COALESCE(MAX(order_num), -1) as max_order
-        FROM answers
-        WHERE question_id = $1
-        "#,
-        question_id
-    )
-    .fetch_one(&**pool)
-    .await?;
-
-    let order_num = max_order.max_order.unwrap_or(-1) + 1;
-
-    let answer = sqlx::query_as!(
-        Answer,
-        r#"
-        INSERT INTO answers (question_id, text, is_correct, order_num, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        RETURNING id, question_id, text, is_correct, order_num, created_at, updated_at
-        "#,
-        question_id,
-        answer_data.text,
-        answer_data.is_correct,
-        order_num
-    )
-    .fetch_one(&**pool)
-    .await?;
+    let answer = Answer::create(&pool, create_answer).await?;
 
     Ok(HttpResponse::Created().json(answer))
 }
@@ -194,7 +157,7 @@ pub async fn create_answer(
 #[get("/{question_id}/answers")]
 pub async fn get_answers(
     pool: web::Data<PgPool>,
-    path: web::Path<(i32, i32)>,
+    path: web::Path<(Uuid, Uuid)>, // Changed from (i32, i32) to (Uuid, Uuid)
 ) -> Result<HttpResponse> {
     let (_quiz_id, question_id) = path.into_inner();
 
@@ -204,7 +167,7 @@ pub async fn get_answers(
         SELECT id, question_id, text, is_correct, order_num, created_at, updated_at
         FROM answers
         WHERE question_id = $1
-        ORDER BY order_num
+        ORDER BY order_num, id
         "#,
         question_id
     )

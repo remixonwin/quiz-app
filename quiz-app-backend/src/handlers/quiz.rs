@@ -2,9 +2,10 @@ use actix_web::{
     get, post, put, delete,
     web, HttpResponse
 };
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Utc, NaiveDateTime};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
+use uuid::Uuid;
 
 use crate::{
     auth::Claims,
@@ -48,7 +49,7 @@ pub async fn create_quiz(
     let quiz = CreateQuiz {
         title: quiz_req.title.clone(),
         description: quiz_req.description.clone(),
-        created_by: claims.user_id,
+        created_by: claims.user_id, // Ensure user_id is i32
     };
     println!("Created quiz struct: {:?}", quiz);
 
@@ -86,7 +87,7 @@ pub async fn get_quizzes(
 #[get("/quizzes/{quiz_id}")]
 pub async fn get_quiz(
     pool: web::Data<PgPool>,
-    quiz_id: web::Path<i32>,
+    quiz_id: web::Path<Uuid>, // Changed from i32 to Uuid
 ) -> Result<HttpResponse, AppError> {
     let id = quiz_id.into_inner();
     let quiz = sqlx::query_as!(
@@ -110,7 +111,7 @@ pub async fn get_quiz(
 #[put("/{id}")]
 pub async fn update_quiz(
     pool: web::Data<PgPool>,
-    id: web::Path<i32>,
+    id: web::Path<Uuid>, // Changed from i32 to Uuid
     quiz: web::Json<CreateQuiz>,
     claims: Claims,
 ) -> Result<HttpResponse, AppError> {
@@ -163,7 +164,7 @@ pub async fn update_quiz(
 #[delete("/{quiz_id}")]
 pub async fn delete_quiz(
     pool: web::Data<PgPool>,
-    quiz_id: web::Path<i32>,
+    quiz_id: web::Path<Uuid>, // Changed from i32 to Uuid
     claims: Claims,
 ) -> Result<HttpResponse, AppError> {
     let id = quiz_id.into_inner();
@@ -218,12 +219,12 @@ pub async fn delete_quiz(
 #[post("/quizzes/{quiz_id}/submit")]
 pub async fn submit_quiz(
     pool: web::Data<PgPool>,
-    quiz_id: web::Path<i32>,
+    quiz_id: web::Path<Uuid>, // Changed from i32 to Uuid
     _user_answers: web::Json<Vec<UserAnswer>>,
     claims: Claims,
 ) -> Result<HttpResponse, AppError> {
     let id = quiz_id.into_inner();
-    let now = Utc::now();
+    let now = NaiveDateTime::from_timestamp(Utc::now().timestamp(), 0); // Convert to NaiveDateTime
     let quiz_attempt = sqlx::query_as!(
         QuizAttemptResponse,
         r#"
@@ -233,9 +234,9 @@ pub async fn submit_quiz(
             id,
             quiz_id,
             user_id,
-            completed_at as "completed_at!: DateTime<Utc>",
-            created_at as "created_at!: DateTime<Utc>",
-            updated_at as "updated_at!: DateTime<Utc>"
+            completed_at,
+            created_at,
+            updated_at
         "#,
         id,
         claims.user_id,

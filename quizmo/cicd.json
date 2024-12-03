@@ -1,0 +1,12 @@
+{
+  "title": "cicd",
+  "timeout": 50000,
+  "snippets": false,
+  "description": null,
+  "savedAt": 1733024543,
+  "loadedAt": null,
+  "modified": false,
+  "filename": "cicd.json",
+  "targets": {},
+  "groups": {}
+}

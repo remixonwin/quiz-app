@@ -17,6 +17,8 @@ struct QuestionData {
 
 #[allow(dead_code)]
 pub async fn seed_database(pool: &PgPool) -> Result<(), Box<dyn std::error::Error>> {
+    // Confirm that the connection pool uses the correct DATABASE_URL
+
     // Create a test user
     let user = sqlx::query!(
         r#"
@@ -33,7 +35,7 @@ pub async fn seed_database(pool: &PgPool) -> Result<(), Box<dyn std::error::Erro
     // Create a test quiz
     let quiz = sqlx::query!(
         r#"
-        INSERT INTO quizzes (title, description, created_by)
+        INSERT INTO quizzes (title, description, creator_id)
         VALUES ($1, $2, $3)
         RETURNING id
         "#,
@@ -91,7 +93,7 @@ pub async fn seed_database(pool: &PgPool) -> Result<(), Box<dyn std::error::Erro
         for (text, is_correct, order_num) in answers {
             sqlx::query!(
                 r#"
-                INSERT INTO answers (question_id, text, is_correct, order_num)
+                INSERT INTO answers (question_id, answer_text, is_correct, order_num)
                 VALUES ($1, $2, $3, $4)
                 "#,
                 question.id,

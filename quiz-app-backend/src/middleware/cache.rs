@@ -34,7 +34,7 @@ impl CacheMiddleware {
 
 impl<S> Transform<S, ServiceRequest> for CacheMiddleware
 where
-    S: Service<ServiceRequest, Response = ServiceResponse, Error = Error> + 'static,
+    S: Service<ServiceRequest, Response = ServiceResponse, Error = Error> + 'static + Clone,
 {
     type Response = ServiceResponse;
     type Error = Error;
@@ -100,7 +100,7 @@ where
 
             // Cache the response if it's successful
             if response.status().is_success() {
-                if let Ok(body) = response.take_body().try_into_bytes() {
+                if let Ok(body) = response.map_body(|head, body| body).try_into_bytes() {
                     cache.write().await.put(
                         cache_key,
                         (body.to_vec(), std::time::Instant::now()),

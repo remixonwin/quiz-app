@@ -1,35 +1,21 @@
 use crate::{
-    auth::Claims,
+    auth::{Claims, hash_password, verify_password, generate_token},
     error::AppError,
-    models::{CreateUser, LoginCredentials, UpdateUser, User},
+    models::{CreateUser, LoginCredentials, UpdateUser, User, DbModel},
 };
-use actix_web::{get, post, put, web, HttpResponse};
-use bcrypt::{hash, verify, DEFAULT_COST};
+use actix_web::{web, HttpResponse, post, put, get};
 use chrono::Utc;
 use serde_json::json;
-use sqlx::{postgres::PgPool, query_as};
-
-type Result<T> = std::result::Result<T, AppError>;
-
-fn hash_password(password: &str) -> Result<String> {
-    hash(password, DEFAULT_COST).map_err(|_| AppError::HashError)
-}
-
-fn verify_password(password: &str, hashed_password: &str) -> Result<()> {
-    if verify(password, hashed_password).map_err(|_| AppError::InvalidCredentials)? {
-        Ok(())
-    } else {
-        Err(AppError::InvalidCredentials)
-    }
-}
+use sqlx::postgres::PgPool;
+use uuid::Uuid;
 
 #[post("/register")]
 pub async fn register(
     pool: web::Data<PgPool>,
     user_data: web::Json<CreateUser>,
-) -> Result<HttpResponse> {
-    let hashed_password = hash_password(&user_data.password)?;
-    let now = Utc::now();
+) -> std::result::Result<HttpResponse, AppError> {
+    let password_hash = hash_password(&user_data.password)?;
+    let now = Utc::now().naive_utc();
 
     let user = sqlx::query_as!(
         User,
@@ -39,13 +25,13 @@ pub async fn register(
         RETURNING id, username, password_hash, role, created_at, updated_at
         "#,
         user_data.username,
-        hashed_password,
+        password_hash,
         now
     )
     .fetch_one(pool.get_ref())
     .await?;
 
-    let token = crate::auth::generate_token(user.id, &user.role)?;
+    let token = generate_token(user.id, &user.role)?;
 
     Ok(HttpResponse::Created().json(json!({ "token": token })))
 }
@@ -54,7 +40,7 @@ pub async fn register(
 pub async fn login(
     pool: web::Data<PgPool>,
     credentials: web::Json<LoginCredentials>,
-) -> Result<HttpResponse> {
+) -> std::result::Result<HttpResponse, AppError> {
     let user = sqlx::query_as!(
         User,
         r#"
@@ -64,61 +50,42 @@ pub async fn login(
         "#,
         credentials.username
     )
-    .fetch_one(pool.get_ref())
-    .await?;
+    .fetch_optional(pool.get_ref())
+    .await?
+    .ok_or(AppError::Unauthorized("Invalid credentials".to_string()))?;
 
     verify_password(&credentials.password, &user.password_hash)?;
 
-    let token = crate::auth::generate_token(user.id, &user.role)?;
+    let token = generate_token(user.id, &user.role)?;
 
     Ok(HttpResponse::Ok().json(json!({ "token": token })))
 }
 
-#[get("/me")]
+#[get("/profile")]
 pub async fn get_profile(
     pool: web::Data<PgPool>,
     claims: Claims,
-) -> Result<HttpResponse> {
-    let user = sqlx::query_as!(
-        User,
-        r#"
-        SELECT id, username, password_hash, role, created_at, updated_at
-        FROM users
-        WHERE id = $1
-        "#,
-        claims.user_id
-    )
-    .fetch_one(pool.get_ref())
-    .await?;
-
-    Ok(HttpResponse::Ok().json(user))
+) -> std::result::Result<HttpResponse, AppError> {
+    let user_id = Uuid::parse_str(&claims.sub)
+        .map_err(|_| AppError::InvalidUuid)?;
+    let user = User::get_by_id(&pool, user_id).await?;
+    match user {
+        Some(user) => Ok(HttpResponse::Ok().json(user)),
+        None => Ok(HttpResponse::NotFound().finish()),
+    }
 }
 
-#[put("/me")]
+#[put("/profile")]
 pub async fn update_profile(
     pool: web::Data<PgPool>,
+    form: web::Json<UpdateUser>,
     claims: Claims,
-    user_data: web::Json<UpdateUser>,
-) -> Result<HttpResponse> {
-    let now = Utc::now();
-
-    let user = sqlx::query_as!(
-        User,
-        r#"
-        UPDATE users
-        SET username = COALESCE($1, username),
-            password_hash = COALESCE($2, password_hash),
-            updated_at = $3
-        WHERE id = $4
-        RETURNING id, username, password_hash, role, created_at, updated_at
-        "#,
-        user_data.username,
-        user_data.password.map(|p| hash_password(&p)).transpose()?,
-        now,
-        claims.user_id
-    )
-    .fetch_one(pool.get_ref())
-    .await?;
-
+) -> std::result::Result<HttpResponse, AppError> {
+    let user_id = Uuid::parse_str(&claims.sub)
+        .map_err(|_| AppError::Unauthorized("Invalid user ID".to_string()))?;
+    
+    let mut user_data = form.into_inner();
+    user_data.id = Some(user_id);
+    let user = User::update(&pool, user_data).await?;
     Ok(HttpResponse::Ok().json(user))
 }

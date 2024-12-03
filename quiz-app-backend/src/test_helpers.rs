@@ -1,25 +1,21 @@
+use actix_web::{web, App};
 use sqlx::PgPool;
-use chrono::{self, NaiveDateTime};
+use uuid::Uuid;
+use chrono::Utc;
+
 use crate::{
-    routes::configure_routes,
-    models::Quiz,
+    handlers::{
+        user,
+        quiz,
+    },
+    models::{Quiz, User},
     config::get_config,
     auth::generate_token,
 };
-use actix_web::{
-    test, 
-    web, 
-    App,
-    dev::{Service, ServiceResponse},
-    Error,
-};
-use actix_http::Request;
-use bcrypt;
-use uuid::Uuid;
 
 pub struct TestContext {
     pub pool: PgPool,
-    pub user_id: Uuid, // Changed from i32 to Uuid
+    pub user_id: Uuid, 
     pub token: String,
 }
 
@@ -27,30 +23,29 @@ pub fn init_test_env() {
     std::env::set_var("JWT_SECRET", "test_secret_key_for_quiz_app_tests");
 }
 
-pub async fn create_test_user(pool: &PgPool) -> Uuid { // Changed return type from i32 to Uuid
-    let now = chrono::Utc::now();
-    let username = format!("test_user_{}", uuid::Uuid::new_v4());
-    let password = bcrypt::hash("test_password123", bcrypt::DEFAULT_COST)
+pub async fn create_test_user(pool: &PgPool, username: &str, password: &str) -> Result<Uuid, sqlx::Error> { 
+    let now = Utc::now().naive_utc();
+    let password_hash = bcrypt::hash(password, bcrypt::DEFAULT_COST)
         .expect("Failed to hash password");
     
     let user_id: Uuid = sqlx::query_scalar!(
         r#"
-        INSERT INTO users (username, password_hash, role)
-        VALUES ($1, $2, 'test')
+        INSERT INTO users (username, password_hash, role, created_at, updated_at)
+        VALUES ($1, $2, 'test', $3, $3)
         RETURNING id
         "#,
         username,
-        password
+        password_hash,
+        now
     )
     .fetch_one(pool)
-    .await
-    .unwrap();
+    .await?;
 
-    user_id
+    Ok(user_id)
 }
 
-pub async fn create_test_quiz(pool: &PgPool, user_id: Uuid) -> Uuid { // Changed id type to Uuid
-    let now = NaiveDateTime::from_timestamp(chrono::Utc::now().timestamp(), 0); // Use NaiveDateTime
+pub async fn create_test_quiz(pool: &PgPool, user_id: Uuid) -> Uuid { 
+    let now = Utc::now().naive_utc(); 
     let quiz_id: Uuid = sqlx::query_scalar!(
         r#"
         INSERT INTO quizzes (title, description, created_by, created_at, updated_at)
@@ -70,13 +65,13 @@ pub async fn create_test_quiz(pool: &PgPool, user_id: Uuid) -> Uuid { // Changed
 }
 
 pub async fn create_test_quiz_with_title(pool: &PgPool, user_id: Uuid, title: &str) -> Quiz {
-    let now = chrono::Utc::now();
+    let now = Utc::now().naive_utc(); 
     let quiz = sqlx::query_as!(
         Quiz,
         r#"
-        INSERT INTO quizzes (title, description, creator_id, created_at, updated_at)
+        INSERT INTO quizzes (title, description, created_by, created_at, updated_at)
         VALUES ($1, $2, $3, $4, $4)
-        RETURNING id, title, description, creator_id, created_at, updated_at
+        RETURNING id, title, description, created_by, created_at, updated_at
         "#,
         title,
         "A test quiz description",
@@ -132,7 +127,7 @@ pub async fn verify_quiz_in_db(pool: &PgPool, quiz_id: Uuid) -> Option<Quiz> {
     sqlx::query_as!(
         Quiz,
         r#"
-        SELECT id, title, description, creator_id, created_at, updated_at
+        SELECT id, title, description, created_by, created_at, updated_at
         FROM quizzes 
         WHERE id = $1
         "#,
@@ -143,14 +138,27 @@ pub async fn verify_quiz_in_db(pool: &PgPool, quiz_id: Uuid) -> Option<Quiz> {
     .expect("Failed to query database")
 }
 
-pub async fn setup_test_app(
-    pool: PgPool,
-) -> impl Service<Request, Response = ServiceResponse, Error = Error> {
-    test::init_service(
+pub async fn setup_test_app(pool: PgPool) {
+    let _app = actix_web::test::init_service(
         App::new()
             .app_data(web::Data::new(pool.clone()))
-            .configure(configure_routes)
-    ).await
+            .service(
+                web::scope("/api/users")
+                    .service(user::register)
+                    .service(user::login)
+                    .service(user::update_profile)
+            )
+            .service(
+                web::scope("/api/quizzes")
+                    .service(quiz::get_quizzes)
+                    .service(quiz::create_quiz)
+                    .service(quiz::get_quiz)
+                    .service(quiz::update_quiz)
+                    .service(quiz::delete_quiz)
+                    .service(quiz::submit_quiz)
+            )
+    )
+    .await;
 }
 
 pub async fn setup_test_context() -> TestContext {
@@ -172,16 +180,17 @@ pub async fn setup_test_context() -> TestContext {
         .expect("Failed to clean up users");
 
     // Create test user
-    let now = chrono::Utc::now();
+    let now = Utc::now().naive_utc(); 
     let username = format!("test_user_{}", uuid::Uuid::new_v4());
     let password = bcrypt::hash("test_password123", bcrypt::DEFAULT_COST)
         .expect("Failed to hash password");
     
-    let user_id = sqlx::query_scalar!(
+    let user = sqlx::query_as!(
+        User,
         r#"
-        INSERT INTO users (username, password_hash, created_at, updated_at)
-        VALUES ($1, $2, $3, $3)
-        RETURNING id
+        INSERT INTO users (username, password_hash, role, created_at, updated_at)
+        VALUES ($1, $2, 'test', $3, $3)
+        RETURNING id, username, password_hash, role, created_at, updated_at
         "#,
         username,
         password,
@@ -194,7 +203,7 @@ pub async fn setup_test_context() -> TestContext {
     // Verify user was created
     let user_exists = sqlx::query!(
         "SELECT id FROM users WHERE id = $1",
-        user_id
+        user.id
     )
     .fetch_optional(&pool)
     .await
@@ -202,11 +211,11 @@ pub async fn setup_test_context() -> TestContext {
 
     assert!(user_exists.is_some(), "Test user was not created successfully");
     
-    let token = generate_token(user_id, "user").expect("Failed to generate token");
+    let token = generate_token(user.id, "user").expect("Failed to generate token");
     
     TestContext {
         pool,
-        user_id,
+        user_id: user.id,
         token,
     }
 }

@@ -9,22 +9,30 @@ use std::convert::From;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
+#[allow(dead_code)]
 pub enum AppError {
     #[error("Internal Server Error: {0}")]
     InternalServerError(String),
 
+    /// Represents a bad request with a specific error message.
+    /// Can be used for validation errors or malformed requests.
     #[error("Bad Request: {0}")]
     BadRequest(String),
 
+    /// Represents an unauthorized access attempt.
     #[error("Unauthorized: {0}")]
     Unauthorized(String),
 
+    /// Represents a forbidden action, typically when a user lacks permissions.
     #[error("Forbidden: {0}")]
     Forbidden(String),
 
+    /// Represents a resource not found error.
     #[error("Not Found: {0}")]
     NotFound(String),
 
+    /// Represents a validation error with a specific message.
+    /// Used for input validation failures.
     #[error("Validation Error: {0}")]
     ValidationError(String),
 
@@ -43,14 +51,12 @@ pub enum AppError {
     #[error("Json Error: {0}")]
     JsonError(serde_json::Error),
 
+    /// Represents an authentication failure due to invalid credentials.
     #[error("Invalid Credentials")]
     InvalidCredentials,
 
     #[error("Token Creation Error")]
     TokenCreationError,
-
-    #[error("Token creation error")]
-    TokenCreation,
 
     #[error("Invalid token")]
     InvalidToken,
@@ -58,8 +64,13 @@ pub enum AppError {
     #[error("Missing token")]
     MissingToken,
 
+    /// Represents a generic hash-related error.
+    /// Can be used for password hashing or other cryptographic operations.
     #[error("Hash error")]
     HashError,
+
+    #[error("Invalid UUID")]
+    InvalidUuid,
 }
 
 #[derive(Serialize)]
@@ -89,10 +100,10 @@ impl ResponseError for AppError {
             AppError::JsonError(_) => HttpResponse::BadRequest().json(ErrorResponse { error: "Json error".to_string() }),
             AppError::InvalidCredentials => HttpResponse::Unauthorized().json(ErrorResponse { error: "Invalid credentials".to_string() }),
             AppError::TokenCreationError => HttpResponse::InternalServerError().json(ErrorResponse { error: "Token creation error".to_string() }),
-            AppError::TokenCreation => HttpResponse::InternalServerError().json(ErrorResponse { error: "Token creation error".to_string() }),
             AppError::InvalidToken => HttpResponse::Unauthorized().json(ErrorResponse { error: "Invalid token".to_string() }),
             AppError::MissingToken => HttpResponse::Unauthorized().json(ErrorResponse { error: "Missing token".to_string() }),
             AppError::HashError => HttpResponse::InternalServerError().json(ErrorResponse { error: "Hash error".to_string() }),
+            AppError::InvalidUuid => HttpResponse::BadRequest().json(ErrorResponse { error: "Invalid UUID".to_string() }),
         }
     }
 
@@ -111,10 +122,10 @@ impl ResponseError for AppError {
             AppError::JsonError(_) => StatusCode::BAD_REQUEST,
             AppError::InvalidCredentials => StatusCode::UNAUTHORIZED,
             AppError::TokenCreationError => StatusCode::INTERNAL_SERVER_ERROR,
-            AppError::TokenCreation => StatusCode::INTERNAL_SERVER_ERROR,
             AppError::InvalidToken => StatusCode::UNAUTHORIZED,
             AppError::MissingToken => StatusCode::UNAUTHORIZED,
             AppError::HashError => StatusCode::INTERNAL_SERVER_ERROR,
+            AppError::InvalidUuid => StatusCode::BAD_REQUEST,
         }
     }
 }

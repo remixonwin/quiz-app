@@ -1,11 +1,8 @@
 use actix_web::{
     dev::{Service, ServiceRequest, ServiceResponse, Transform},
-    Error, FromRequest, HttpMessage, HttpRequest,
+    Error, FromRequest, HttpRequest,
 };
-use futures::{
-    future::{ok, Ready},
-    FutureExt,
-};
+use futures::future::{ready, Ready};
 use std::{
     pin::Pin,
     task::{Context, Poll},
@@ -13,14 +10,15 @@ use std::{
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
 use crate::error::AppError;
-use chrono::{Duration, Utc, NaiveDateTime};
+use chrono::{Duration, Utc};
 use uuid::Uuid;
+use bcrypt::{hash, verify, DEFAULT_COST};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Claims {
     pub sub: String,
     pub exp: usize,
-    pub user_id: Uuid, // Changed from i32 to Uuid
+    pub user_id: Uuid, 
     pub role: String,
 }
 
@@ -33,7 +31,7 @@ pub trait AuthService {
 pub struct JwtAuthService;
 
 impl AuthService for JwtAuthService {
-    fn generate_token(user_id: Uuid, role: &str) -> Result<String, AppError> { // Changed user_id type
+    fn generate_token(user_id: Uuid, role: &str) -> Result<String, AppError> { 
         let expiration = Utc::now()
             .checked_add_signed(Duration::days(1))
             .expect("valid timestamp")
@@ -42,7 +40,7 @@ impl AuthService for JwtAuthService {
         let claims = Claims {
             sub: "auth".to_string(),
             exp: expiration as usize,
-            user_id, // Now Uuid
+            user_id, 
             role: role.to_string(),
         };
 
@@ -51,7 +49,7 @@ impl AuthService for JwtAuthService {
             &claims,
             &EncodingKey::from_secret(std::env::var("JWT_SECRET").unwrap().as_ref()),
         )
-        .map_err(|_| AppError::TokenCreation)
+        .map_err(|_| AppError::TokenCreationError)
     }
 
     fn decode_token(token: &str) -> Result<Claims, AppError> {
@@ -65,7 +63,7 @@ impl AuthService for JwtAuthService {
     }
 }
 
-pub fn generate_token(user_id: Uuid, role: &str) -> Result<String, AppError> { // Changed user_id type
+pub fn generate_token(user_id: Uuid, role: &str) -> Result<String, AppError> { 
     JwtAuthService::generate_token(user_id, role)
 }
 
@@ -83,11 +81,11 @@ impl FromRequest for Claims {
         match token {
             Some(token) => {
                 match JwtAuthService::decode_token(token) {
-                    Ok(claims) => ok(Ok(claims)),
-                    Err(_) => ok(Err(AppError::InvalidToken)),
+                    Ok(claims) => ready(Ok(claims)),
+                    Err(_) => ready(Err(AppError::InvalidToken)),
                 }
             },
-            None => ok(Err(AppError::MissingToken)),
+            None => ready(Err(AppError::MissingToken)),
         }
     }
 }
@@ -106,7 +104,7 @@ where
     type Future = Ready<Result<Self::Transform, Self::InitError>>;
 
     fn new_transform(&self, service: S) -> Self::Future {
-        ok(AuthMiddleware { service })
+        ready(Ok(AuthMiddleware { service }))
     }
 }
 
@@ -134,4 +132,14 @@ where
             Ok(res)
         })
     }
+}
+
+pub fn hash_password(password: &str) -> Result<String, AppError> {
+    hash(password, DEFAULT_COST)
+        .map_err(|_| AppError::InternalServerError("Failed to hash password".into()))
+}
+
+pub fn verify_password(password: &str, hash: &str) -> Result<bool, AppError> {
+    verify(password, hash)
+        .map_err(|_| AppError::InternalServerError("Failed to verify password".into()))
 }

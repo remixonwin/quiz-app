@@ -1,73 +1,86 @@
-use actix_web::{web, HttpResponse, get, post, put, delete};
+use actix_web::{get, post, put, delete, web, HttpResponse};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::auth::Claims;
-use crate::error::AppError;
-use crate::models::{Answer, CreateAnswer, UpdateAnswerRequest, DbModel};
-
-#[get("")]
-pub async fn get_answers(
-    pool: web::Data<PgPool>,
-    question_id: web::Path<Uuid>,
-    #[allow(unused_variables)]
-    _claims: Claims,
-) -> Result<HttpResponse, AppError> {
-    let answers = Answer::get_by_question_id(&pool, question_id.into_inner()).await?;
-    Ok(HttpResponse::Ok().json(answers))
-}
+use crate::{
+    auth::Claims,
+    error::AppError,
+    models::{Answer, Question, Quiz, CreateAnswer, UpdateAnswer},
+};
 
 #[post("")]
 pub async fn create_answer(
     pool: web::Data<PgPool>,
-    question_id: web::Path<Uuid>,
+    claims: Claims,
     form: web::Json<CreateAnswer>,
-    #[allow(unused_variables)]
-    _claims: Claims,
 ) -> Result<HttpResponse, AppError> {
-    let mut answer_data = form.into_inner();
-    answer_data.question_id = question_id.into_inner();
-    let answer = Answer::create(&pool, answer_data).await?;
+    let question = Question::find_by_id(&pool, form.question_id).await?;
+    let quiz = Quiz::find_by_id(&pool, question.quiz_id).await?;
+    
+    // Check if user owns the quiz
+    if quiz.creator_id != claims.user_id {
+        return Err(AppError::Forbidden("You do not own this quiz".to_string()));
+    }
+
+    let answer = Answer::create(&pool, question.id, form.into_inner()).await?;
     Ok(HttpResponse::Created().json(answer))
+}
+
+#[get("/{question_id}/answers")]
+pub async fn get_answers(
+    pool: web::Data<PgPool>,
+    question_id: web::Path<Uuid>,
+) -> Result<HttpResponse, AppError> {
+    let answers = Answer::find_by_question(&pool, question_id.into_inner()).await?;
+    Ok(HttpResponse::Ok().json(answers))
 }
 
 #[get("/{answer_id}")]
 pub async fn get_answer(
     pool: web::Data<PgPool>,
-    path: web::Path<(Uuid, Uuid)>,
-    #[allow(unused_variables)]
-    _claims: Claims,
+    answer_id: web::Path<Uuid>,
 ) -> Result<HttpResponse, AppError> {
-    let (_question_id, answer_id) = path.into_inner();
-    let answer = Answer::get_by_id(&pool, answer_id).await?;
-    match answer {
-        Some(answer) => Ok(HttpResponse::Ok().json(answer)),
-        None => Ok(HttpResponse::NotFound().finish()),
-    }
+    let answer = Answer::find_by_id(&pool, answer_id.into_inner()).await?;
+    Ok(HttpResponse::Ok().json(answer))
 }
 
 #[put("/{answer_id}")]
 pub async fn update_answer(
     pool: web::Data<PgPool>,
-    path: web::Path<(Uuid, Uuid)>,
-    form: web::Json<UpdateAnswerRequest>,
-    #[allow(unused_variables)]
-    _claims: Claims,
+    answer_id: web::Path<Uuid>,
+    claims: Claims,
+    form: web::Json<UpdateAnswer>,
 ) -> Result<HttpResponse, AppError> {
-    let (_question_id, answer_id) = path.into_inner();
-    let mut answer_data = form.into_inner();
-    answer_data.id = answer_id;
-    let answer = Answer::update(&pool, answer_data).await?;
+    let answer_id = answer_id.into_inner();
+    let answer = Answer::find_by_id(&pool, answer_id).await?;
+    let question = Question::find_by_id(&pool, answer.question_id).await?;
+    let quiz = Quiz::find_by_id(&pool, question.quiz_id).await?;
+    
+    // Check if user owns the quiz
+    if quiz.creator_id != claims.user_id {
+        return Err(AppError::Forbidden("You do not own this quiz".to_string()));
+    }
+
+    let answer = Answer::update(&pool, answer_id, form.into_inner()).await?;
     Ok(HttpResponse::Ok().json(answer))
 }
 
 #[delete("/{answer_id}")]
 pub async fn delete_answer(
     pool: web::Data<PgPool>,
-    path: web::Path<(Uuid, Uuid)>,
+    answer_id: web::Path<Uuid>,
     claims: Claims,
 ) -> Result<HttpResponse, AppError> {
-    let (_question_id, answer_id) = path.into_inner();
-    Answer::delete(&pool, answer_id, claims.user_id).await?;
+    let answer_id = answer_id.into_inner();
+    let answer = Answer::find_by_id(&pool, answer_id).await?;
+    let question = Question::find_by_id(&pool, answer.question_id).await?;
+    let quiz = Quiz::find_by_id(&pool, question.quiz_id).await?;
+    
+    // Check if user owns the quiz
+    if quiz.creator_id != claims.user_id {
+        return Err(AppError::Forbidden("You do not own this quiz".to_string()));
+    }
+
+    Answer::delete(&pool, answer_id).await?;
     Ok(HttpResponse::NoContent().finish())
 }

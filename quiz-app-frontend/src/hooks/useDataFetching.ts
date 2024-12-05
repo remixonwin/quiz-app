@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 interface FetchState<T> {
   data: T | null;
@@ -8,7 +8,7 @@ interface FetchState<T> {
 
 export function useDataFetching<T>(
   fetchFn: () => Promise<T>,
-  dependencies: any[] = []
+  dependencies: React.DependencyList = []
 ): FetchState<T> & { refetch: () => Promise<void> } {
   const [state, setState] = useState<FetchState<T>>({
     data: null,
@@ -16,7 +16,7 @@ export function useDataFetching<T>(
     error: null,
   });
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setState(prev => ({ ...prev, loading: true, error: null }));
     try {
       const data = await fetchFn();
@@ -28,11 +28,12 @@ export function useDataFetching<T>(
         error: error instanceof Error ? error.message : 'An error occurred',
       });
     }
-  };
+  }, [fetchFn]);
 
   useEffect(() => {
     fetchData();
-  }, dependencies);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchFn, ...dependencies]);
 
   return {
     ...state,

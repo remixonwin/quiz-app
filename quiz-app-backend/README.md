@@ -59,3 +59,19 @@ The application uses a custom `AppError` type that handles:
 - Bad request errors
 
 Errors are returned as JSON with appropriate HTTP status codes.
+
+## Running Endpoint Tests
+
+To execute endpoint tests within a Docker container, follow these steps:
+
+1. **Build the test image:**
+   ```bash
+   docker build --target endpoint-tester -t quiz-app-endpoint-tests .
+   ```
+
+2. **Run the tests:**
+   ```bash
+   docker run --rm --network host quiz-app-endpoint-tests
+   ```
+
+   *Ensure that the PostgreSQL database is running and accessible at the `DATABASE_URL` specified in the Dockerfile.*

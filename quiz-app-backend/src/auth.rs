@@ -1,61 +1,65 @@
 use actix_web::{
-    dev::{Service, ServiceRequest, ServiceResponse, Transform},
-    Error, FromRequest, HttpRequest,
+    dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Transform},
+    error::ErrorUnauthorized,
+    Error,
+    FromRequest,
+    HttpMessage,
+    HttpRequest,
+    HttpResponse,
+    body::EitherBody,
+    http::header::AUTHORIZATION,
+    web,
 };
-use futures::future::{ready, Ready};
-use std::{
-    pin::Pin,
-    task::{Context, Poll},
-};
+use futures::future::{ready, LocalBoxFuture, Ready};
+use chrono::{Duration, Utc};
+use bcrypt::{hash, verify, DEFAULT_COST};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
-use crate::error::AppError;
-use chrono::{Duration, Utc};
+use serde_json::json;
 use uuid::Uuid;
-use bcrypt::{hash, verify, DEFAULT_COST};
+use std::rc::Rc;
+
+use crate::{config::Config, error::AppError, models::User};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Claims {
-    pub sub: String,
-    pub exp: usize,
-    pub user_id: Uuid, 
+    pub user_id: Uuid,
     pub role: String,
+    pub exp: i64,
 }
 
-#[allow(dead_code)]
 pub trait AuthService {
-    fn generate_token(user_id: Uuid, role: &str) -> Result<String, AppError>;
-    fn decode_token(token: &str) -> Result<Claims, AppError>;
+    fn generate_token(config: &Config, user: &User) -> Result<String, AppError>;
+    fn decode_token(token: &str, config: &Config) -> Result<Claims, AppError>;
 }
 
 pub struct JwtAuthService;
 
 impl AuthService for JwtAuthService {
-    fn generate_token(user_id: Uuid, role: &str) -> Result<String, AppError> { 
+    fn generate_token(config: &Config, user: &User) -> Result<String, AppError> {
         let expiration = Utc::now()
-            .checked_add_signed(Duration::days(1))
+            .checked_add_signed(Duration::hours(24))
             .expect("valid timestamp")
             .timestamp();
 
         let claims = Claims {
-            sub: "auth".to_string(),
-            exp: expiration as usize,
-            user_id, 
-            role: role.to_string(),
+            user_id: user.id,
+            role: user.role.clone(),
+            exp: expiration,
         };
 
         encode(
             &Header::default(),
             &claims,
-            &EncodingKey::from_secret(std::env::var("JWT_SECRET").unwrap().as_ref()),
+            &EncodingKey::from_secret(config.jwt_secret.as_ref()),
         )
         .map_err(|_| AppError::TokenCreationError)
     }
 
-    fn decode_token(token: &str) -> Result<Claims, AppError> {
+    fn decode_token(token: &str, config: &Config) -> Result<Claims, AppError> {
         decode::<Claims>(
             token,
-            &DecodingKey::from_secret(std::env::var("JWT_SECRET").unwrap().as_ref()),
+            &DecodingKey::from_secret(config.jwt_secret.as_ref()),
             &Validation::default(),
         )
         .map(|data| data.claims)
@@ -63,83 +67,135 @@ impl AuthService for JwtAuthService {
     }
 }
 
-pub fn generate_token(user_id: Uuid, role: &str) -> Result<String, AppError> { 
-    JwtAuthService::generate_token(user_id, role)
+pub async fn generate_token(user: &User) -> Result<String, AppError> {
+    let config = Config::new()?;
+    Ok(JwtAuthService::generate_token(&config, user)?)
+}
+
+pub async fn hash_password(password: &str) -> Result<String, AppError> {
+    web::block(move || hash(password.as_bytes(), DEFAULT_COST))
+        .await
+        .map_err(AppError::from)?
+        .map_err(|_| AppError::PasswordHashingError)
+}
+
+pub async fn verify_password(password: &str, hash: &str) -> Result<bool, AppError> {
+    web::block(move || verify(password.as_bytes(), hash))
+        .await
+        .map_err(AppError::from)?
+        .map_err(|_| AppError::PasswordVerificationError)
 }
 
 impl FromRequest for Claims {
-    type Error = AppError;
+    type Error = Error;
     type Future = Ready<Result<Self, Self::Error>>;
 
     fn from_request(req: &HttpRequest, _: &mut actix_web::dev::Payload) -> Self::Future {
-        let token = req
-            .headers()
-            .get("Authorization")
-            .and_then(|h| h.to_str().ok())
-            .and_then(|s| s.strip_prefix("Bearer "));
+        let auth_header = req.headers()
+            .get(AUTHORIZATION)
+            .and_then(|h| h.to_str().ok());
 
-        match token {
-            Some(token) => {
-                match JwtAuthService::decode_token(token) {
-                    Ok(claims) => ready(Ok(claims)),
-                    Err(_) => ready(Err(AppError::InvalidToken)),
-                }
-            },
-            None => ready(Err(AppError::MissingToken)),
+        let token = match auth_header {
+            Some(auth_str) if auth_str.starts_with("Bearer ") => {
+                auth_str[7..].to_string()
+            }
+            _ => return ready(Err(ErrorUnauthorized(json!({ 
+                "error": "No valid authorization token" 
+            })))),
+        };
+
+        let config = match Config::new() {
+            Ok(config) => config,
+            Err(_) => return ready(Err(ErrorUnauthorized(json!({
+                "error": "Server configuration error"
+            })))),
+        };
+
+        match JwtAuthService::decode_token(&token, &config) {
+            Ok(claims) => {
+                req.extensions_mut().insert(claims.clone());
+                ready(Ok(claims))
+            }
+            Err(_) => ready(Err(ErrorUnauthorized(json!({
+                "error": "Invalid token"
+            })))),
         }
     }
 }
 
-pub struct Auth;
+pub struct JwtMiddleware<S> {
+    service: Rc<S>,
+}
 
-impl<S, B> Transform<S, ServiceRequest> for Auth
-where
-    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + 'static,
-    B: 'static,
-{
-    type Response = ServiceResponse<B>;
-    type Error = Error;
-    type Transform = AuthMiddleware<S>;
-    type InitError = ();
-    type Future = Ready<Result<Self::Transform, Self::InitError>>;
-
-    fn new_transform(&self, service: S) -> Self::Future {
-        ready(Ok(AuthMiddleware { service }))
+impl<S> JwtMiddleware<S> {
+    pub fn new(service: S) -> Self {
+        JwtMiddleware {
+            service: Rc::new(service),
+        }
     }
 }
 
-pub struct AuthMiddleware<S> {
-    service: S,
-}
-
-impl<S, B> Service<ServiceRequest> for AuthMiddleware<S>
+impl<S, B> Service<ServiceRequest> for JwtMiddleware<S>
 where
     S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + 'static,
+    S::Future: 'static,
     B: 'static,
 {
-    type Response = ServiceResponse<B>;
+    type Response = ServiceResponse<EitherBody<B>>;
     type Error = Error;
-    type Future = Pin<Box<dyn futures::Future<Output = Result<Self::Response, Self::Error>>>>;
+    type Future = LocalBoxFuture<'static, Result<Self::Response, Self::Error>>;
 
-    fn poll_ready(&self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.service.poll_ready(cx)
-    }
+    forward_ready!(service);
 
     fn call(&self, req: ServiceRequest) -> Self::Future {
-        let fut = self.service.call(req);
+        let svc = self.service.clone();
+
         Box::pin(async move {
-            let res = fut.await?;
-            Ok(res)
+            let config = match Config::new() {
+                Ok(config) => config,
+                Err(_) => {
+                    return Ok(req.into_response(
+                        HttpResponse::InternalServerError()
+                            .json(json!({
+                                "error": "Server configuration error"
+                            }))
+                            .map_into_right_body(),
+                    ))
+                }
+            };
+
+            let auth_header = req
+                .headers()
+                .get(AUTHORIZATION)
+                .and_then(|h| h.to_str().ok());
+
+            let token = match auth_header {
+                Some(auth_str) if auth_str.starts_with("Bearer ") => auth_str[7..].to_string(),
+                _ => {
+                    return Ok(req.into_response(
+                        HttpResponse::Unauthorized()
+                            .json(json!({
+                                "error": "Missing authorization token"
+                            }))
+                            .map_into_right_body(),
+                    ))
+                }
+            };
+
+            match JwtAuthService::decode_token(&token, &config) {
+                Ok(claims) => {
+                    req.extensions_mut().insert(claims);
+                    let res = svc.call(req).await?;
+                    Ok(res.map_into_left_body())
+                }
+                Err(_) => Ok(req.into_response(
+                    HttpResponse::Unauthorized()
+                        .json(json!({
+                            "error": "Invalid token"
+                        }))
+                        .map_into_right_body(),
+                )),
+            }
         })
     }
-}
-
-pub fn hash_password(password: &str) -> Result<String, AppError> {
-    hash(password, DEFAULT_COST)
-        .map_err(|_| AppError::InternalServerError("Failed to hash password".into()))
-}
-
-pub fn verify_password(password: &str, hash: &str) -> Result<bool, AppError> {
-    verify(password, hash)
-        .map_err(|_| AppError::InternalServerError("Failed to verify password".into()))
 }

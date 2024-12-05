@@ -27,10 +27,7 @@ mod integration_tests {
         let pool = sqlx::PgPool::connect(&config.database_url).await.unwrap();
         let app = test::init_service(
             App::new()
-                .app_data(web::Data::new(pool.clone()))
-                .configure(|cfg| {
-                    quiz_app_backend::routes::configure_routes(cfg);
-                })
+            // ...existing code...
         ).await;
         
         let req = test::TestRequest::get().uri("/api/health").to_request();
@@ -44,10 +41,7 @@ mod integration_tests {
         let pool = sqlx::PgPool::connect(&config.database_url).await.unwrap();
         let app = test::init_service(
             App::new()
-                .app_data(web::Data::new(pool.clone()))
-                .configure(|cfg| {
-                    quiz_app_backend::routes::configure_routes(cfg);
-                })
+            // ...existing code...
         ).await;
 
         let mut rng = StdRng::seed_from_u64(42);
@@ -55,10 +49,7 @@ mod integration_tests {
 
         let create_user_req = test::TestRequest::post()
             .uri("/api/auth/register")
-            .set_json(&CreateUser {
-                username: username.clone(),
-                password: "testpass123".to_string(),
-            })
+            // ...existing code...
             .to_request();
 
         let resp = test::call_service(&app, create_user_req).await;
@@ -71,10 +62,7 @@ mod integration_tests {
         let pool = sqlx::PgPool::connect(&config.database_url).await.unwrap();
         let app = test::init_service(
             App::new()
-                .app_data(web::Data::new(pool.clone()))
-                .configure(|cfg| {
-                    quiz_app_backend::routes::configure_routes(cfg);
-                })
+            // ...existing code...
         ).await;
         
         let mut rng = StdRng::seed_from_u64(42);
@@ -83,10 +71,7 @@ mod integration_tests {
         
         let register_req = test::TestRequest::post()
             .uri("/api/auth/register")
-            .set_json(&CreateUser {
-                username: username.clone(),
-                password: password.clone(),
-            })
+            // ...existing code...
             .to_request();
 
         let resp = test::call_service(&app, register_req).await;
@@ -94,10 +79,7 @@ mod integration_tests {
 
         let login_req = test::TestRequest::post()
             .uri("/api/auth/login")
-            .set_json(&LoginCredentials {
-                username: username.clone(),
-                password: password.clone(),
-            })
+            // ...existing code...
             .to_request();
 
         let resp = test::call_service(&app, login_req).await;
@@ -112,11 +94,7 @@ mod integration_tests {
         // Create a test user in the database
         let user = sqlx::query_as!(
             User,
-            "INSERT INTO users (username, password_hash, role) 
-             VALUES ($1, $2, $3) 
-             RETURNING id, username, password_hash, role, created_at, updated_at",
-            format!("testuser_{}", 42),
-            "hashed_password",
+            // ...existing code...
             "user"
         )
         .fetch_one(&pool)
@@ -127,22 +105,18 @@ mod integration_tests {
 
         let app = test::init_service(
             App::new()
-                .app_data(web::Data::new(pool.clone()))
-                .configure(|cfg| {
-                    quiz_app_backend::routes::configure_routes(cfg);
-                })
+            // ...existing code...
         ).await;
 
         let quiz_data = CreateQuiz {
             title: "Test Quiz".to_string(),
-            description: Some("A test quiz".to_string()),
+            // ...existing code...
             created_by: user.id,
         };
 
         let create_resp = test::TestRequest::post()
             .uri("/api/quizzes")
-            .insert_header(("Authorization", format!("Bearer {}", token)))
-            .set_json(&quiz_data)
+            // ...existing code...
             .to_request();
 
         let quiz: CreateQuiz = test::call_and_read_body_json(&app, create_resp).await;
@@ -157,10 +131,7 @@ mod integration_tests {
         let pool = sqlx::PgPool::connect(&config.database_url).await.unwrap();
         let app = test::init_service(
             App::new()
-                .app_data(web::Data::new(pool.clone()))
-                .configure(|cfg| {
-                    quiz_app_backend::routes::configure_routes(cfg);
-                })
+            // ...existing code...
         ).await;
         
         // Test registration
@@ -170,10 +141,7 @@ mod integration_tests {
         
         let register_req = test::TestRequest::post()
             .uri("/api/auth/register")
-            .set_json(&CreateUser {
-                username: username.clone(),
-                password: password.clone(),
-            })
+            // ...existing code...
             .to_request();
             
         let register_resp = test::call_service(&app, register_req).await;
@@ -182,10 +150,7 @@ mod integration_tests {
         // Test login
         let login_req = test::TestRequest::post()
             .uri("/api/auth/login")
-            .set_json(&LoginCredentials {
-                username: username.clone(),
-                password: password.clone(),
-            })
+            // ...existing code...
             .to_request();
             
         let login_resp = test::call_service(&app, login_req).await;
@@ -198,20 +163,14 @@ mod integration_tests {
         let pool = sqlx::PgPool::connect(&config.database_url).await.unwrap();
         let app = test::init_service(
             App::new()
-                .app_data(web::Data::new(pool.clone()))
-                .configure(|cfg| {
-                    quiz_app_backend::routes::configure_routes(cfg);
-                })
+            // ...existing code...
         ).await;
 
         let mut rng = StdRng::seed_from_u64(42);
         let username = format!("testuser_{}", rng.gen::<u32>());
         let user_id = sqlx::query!(
             "INSERT INTO users (username, password_hash, role) 
-             VALUES ($1, $2, $3) 
-             RETURNING id, username, password_hash, role, created_at, updated_at",
-            username,
-            "hashed_password",
+            // ...existing code...
             "user"
         )
         .fetch_one(&pool)
@@ -221,13 +180,13 @@ mod integration_tests {
 
         let quiz_data = CreateQuiz {
             title: "Test Quiz".to_string(),
-            description: Some("A test quiz".to_string()),
+            // ...existing code...
             created_by: user_id,
         };
 
         let create_resp = test::TestRequest::post()
             .uri("/api/quizzes")
-            .set_json(&quiz_data)
+            // ...existing code...
             .to_request();
 
         let resp = test::call_service(&app, create_resp).await;

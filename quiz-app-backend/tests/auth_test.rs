@@ -2,9 +2,11 @@
 mod auth_tests {
     use quiz_app_backend::auth;
     use dotenv::dotenv;
+    use std::env;
 
     fn setup() {
         dotenv().ok();
+        let jwt_secret = env::var("JWT_SECRET").expect("JWT_SECRET must be set");
     }
 
     #[test]

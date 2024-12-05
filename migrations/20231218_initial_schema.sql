@@ -1,12 +1,12 @@
 -- Drop existing tables if they exist
-DROP TABLE IF EXISTS quiz_attempts;
-DROP TABLE IF EXISTS user_question_progress;
-DROP TABLE IF EXISTS answers;
-DROP TABLE IF EXISTS questions;
-DROP TABLE IF EXISTS quizzes;
-DROP TABLE IF EXISTS categories;
-DROP TABLE IF EXISTS users;
-DROP TYPE IF EXISTS difficulty_level;
+DROP TABLE IF EXISTS quiz_attempts CASCADE;
+DROP TABLE IF EXISTS user_question_progress CASCADE;
+DROP TABLE IF EXISTS answers CASCADE;
+DROP TABLE IF EXISTS questions CASCADE;
+DROP TABLE IF EXISTS quizzes CASCADE;
+DROP TABLE IF EXISTS categories CASCADE;
+DROP TABLE IF EXISTS users CASCADE;
+DROP TYPE IF EXISTS difficulty_level CASCADE;
 DROP FUNCTION IF EXISTS update_updated_at_column CASCADE;
 
 -- Create users table

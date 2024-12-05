@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT created_by\n            FROM quizzes\n            WHERE id = (SELECT quiz_id FROM questions WHERE id = $1)\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "created_by",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "2b8b222307e37e64f4459a3a7da050fcb6ce97b5e5b2aa0bf2cf278806060768"
+}

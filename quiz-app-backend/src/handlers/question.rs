@@ -1,164 +1,93 @@
-use actix_web::{web, HttpResponse, get, post, put, delete};
+use actix_web::{get, post, put, delete, web, HttpResponse};
+use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::auth::Claims;
-use crate::error::AppError;
-use crate::models::{Question, Answer, CreateQuestion, CreateAnswer, UpdateQuestionRequest, DbModel, Quiz};
-
-#[get("")]
-pub async fn get_questions(
-    pool: web::Data<PgPool>,
-    quiz_id: web::Path<Uuid>,
-    claims: Claims,
-) -> Result<HttpResponse, AppError> {
-    // Check if user has access to the quiz
-    let quiz_uuid = *quiz_id;
-    let quiz = Quiz::get_by_id(&pool, quiz_uuid).await?
-        .ok_or(AppError::NotFound("Quiz not found".to_string()))?;
-    
-    // Implement basic authorization check
-    if quiz.created_by != claims.user_id {
-        return Err(AppError::Unauthorized("Not authorized to view these questions".to_string()));
-    }
-
-    let questions = Question::get_by_quiz_id(&pool, quiz_uuid).await?;
-    Ok(HttpResponse::Ok().json(questions))
-}
+use crate::{
+    auth::Claims,
+    error::AppError,
+    models::{Question, Quiz, Answer, CreateQuestion, UpdateQuestion},
+};
 
 #[post("")]
 pub async fn create_question(
     pool: web::Data<PgPool>,
-    quiz_id: web::Path<Uuid>,
-    form: web::Json<CreateQuestion>,
     claims: Claims,
+    form: web::Json<CreateQuestion>,
 ) -> Result<HttpResponse, AppError> {
-    // Check if user owns the quiz
-    let quiz_uuid = *quiz_id;
-    let quiz = Quiz::get_by_id(&pool, quiz_uuid).await?
-        .ok_or(AppError::NotFound("Quiz not found".to_string()))?;
+    let quiz = Quiz::find_by_id(&pool, form.quiz_id).await?;
     
-    if quiz.created_by != claims.user_id {
-        return Err(AppError::Unauthorized("Not authorized to create questions for this quiz".to_string()));
+    // Check if user owns the quiz
+    if quiz.creator_id != claims.user_id {
+        return Err(AppError::Forbidden("You do not own this quiz".to_string()));
     }
 
-    let mut question_data = form.into_inner();
-    question_data.quiz_id = quiz_uuid;
-    let question = Question::create(&pool, question_data).await?;
+    let question = Question::create(&pool, form.into_inner()).await?;
     Ok(HttpResponse::Created().json(question))
+}
+
+#[get("/{quiz_id}/questions")]
+pub async fn get_questions(
+    pool: web::Data<PgPool>,
+    quiz_id: web::Path<Uuid>,
+) -> Result<HttpResponse, AppError> {
+    let questions = Question::find_by_quiz(&pool, quiz_id.into_inner()).await?;
+    Ok(HttpResponse::Ok().json(questions))
 }
 
 #[get("/{question_id}")]
 pub async fn get_question(
     pool: web::Data<PgPool>,
-    path: web::Path<(Uuid, Uuid)>,
-    claims: Claims,
+    question_id: web::Path<Uuid>,
 ) -> Result<HttpResponse, AppError> {
-    let (_quiz_id, question_id) = path.into_inner();
-    let question = Question::get_by_id(&pool, question_id).await?
-        .ok_or(AppError::NotFound("Question not found".to_string()))?;
-
-    // Check if user owns the quiz containing this question
-    let quiz = Quiz::get_by_id(&pool, question.quiz_id).await?
-        .ok_or(AppError::NotFound("Quiz not found".to_string()))?;
-    
-    if quiz.created_by != claims.user_id {
-        return Err(AppError::Unauthorized("Not authorized to view this question".to_string()));
-    }
-
+    let question = Question::find_by_id(&pool, question_id.into_inner()).await?;
     Ok(HttpResponse::Ok().json(question))
 }
 
 #[put("/{question_id}")]
 pub async fn update_question(
     pool: web::Data<PgPool>,
-    path: web::Path<(Uuid, Uuid)>,
-    form: web::Json<UpdateQuestionRequest>,
+    question_id: web::Path<Uuid>,
     claims: Claims,
+    form: web::Json<UpdateQuestion>,
 ) -> Result<HttpResponse, AppError> {
-    let (_quiz_id, question_id) = path.into_inner();
-    let question = Question::get_by_id(&pool, question_id).await?
-        .ok_or(AppError::NotFound("Question not found".to_string()))?;
-
-    // Check if user owns the quiz containing this question
-    let quiz = Quiz::get_by_id(&pool, question.quiz_id).await?
-        .ok_or(AppError::NotFound("Quiz not found".to_string()))?;
+    let question_id = question_id.into_inner();
+    let question = Question::find_by_id(&pool, question_id).await?;
+    let quiz = Quiz::find_by_id(&pool, question.quiz_id).await?;
     
-    if quiz.created_by != claims.user_id {
-        return Err(AppError::Unauthorized("Not authorized to update this question".to_string()));
+    // Check if user owns the quiz
+    if quiz.creator_id != claims.user_id {
+        return Err(AppError::Forbidden("You do not own this quiz".to_string()));
     }
 
-    let mut question_data = form.into_inner();
-    question_data.id = question_id;
-    let question = Question::update(&pool, question_data).await?;
+    let question = Question::update(&pool, question_id, form.into_inner()).await?;
     Ok(HttpResponse::Ok().json(question))
 }
 
 #[delete("/{question_id}")]
 pub async fn delete_question(
     pool: web::Data<PgPool>,
-    path: web::Path<(Uuid, Uuid)>,
+    question_id: web::Path<Uuid>,
     claims: Claims,
 ) -> Result<HttpResponse, AppError> {
-    let (_quiz_id, question_id) = path.into_inner();
-    let question = Question::get_by_id(&pool, question_id).await?
-        .ok_or(AppError::NotFound("Question not found".to_string()))?;
-
-    // Check if user owns the quiz containing this question
-    let quiz = Quiz::get_by_id(&pool, question.quiz_id).await?
-        .ok_or(AppError::NotFound("Quiz not found".to_string()))?;
+    let question_id = question_id.into_inner();
+    let question = Question::find_by_id(&pool, question_id).await?;
+    let quiz = Quiz::find_by_id(&pool, question.quiz_id).await?;
     
-    if quiz.created_by != claims.user_id {
-        return Err(AppError::Unauthorized("Not authorized to delete this question".to_string()));
+    // Check if user owns the quiz
+    if quiz.creator_id != claims.user_id {
+        return Err(AppError::Forbidden("You do not own this quiz".to_string()));
     }
 
-    Question::delete(&pool, question_id, claims.user_id).await?;
+    Question::delete(&pool, question_id).await?;
     Ok(HttpResponse::NoContent().finish())
 }
 
-#[post("/answer")]
-pub async fn create_answer(
-    pool: web::Data<PgPool>,
-    path: web::Path<(Uuid, Uuid)>,
-    form: web::Json<CreateAnswer>,
-    claims: Claims,
-) -> Result<HttpResponse, AppError> {
-    let (question_id, _answer_id) = path.into_inner();
-    let question = Question::get_by_id(&pool, question_id).await?
-        .ok_or(AppError::NotFound("Question not found".to_string()))?;
-
-    // Check if user owns the quiz containing this question
-    let quiz = Quiz::get_by_id(&pool, question.quiz_id).await?
-        .ok_or(AppError::NotFound("Quiz not found".to_string()))?;
-    
-    if quiz.created_by != claims.user_id {
-        return Err(AppError::Unauthorized("Not authorized to create answers for this question".to_string()));
-    }
-
-    let mut answer_data = form.into_inner();
-    answer_data.question_id = question_id;
-    let answer = Answer::create(&pool, answer_data).await?;
-    Ok(HttpResponse::Created().json(answer))
-}
-
-#[get("/answers")]
+#[get("/{question_id}/answers")]
 pub async fn get_answers(
     pool: web::Data<PgPool>,
-    path: web::Path<(Uuid, Uuid)>,
-    claims: Claims,
+    question_id: web::Path<Uuid>,
 ) -> Result<HttpResponse, AppError> {
-    let (question_id, _) = path.into_inner();
-    let question = Question::get_by_id(&pool, question_id).await?
-        .ok_or(AppError::NotFound("Question not found".to_string()))?;
-
-    // Check if user owns the quiz containing this question
-    let quiz = Quiz::get_by_id(&pool, question.quiz_id).await?
-        .ok_or(AppError::NotFound("Quiz not found".to_string()))?;
-    
-    if quiz.created_by != claims.user_id {
-        return Err(AppError::Unauthorized("Not authorized to view answers for this question".to_string()));
-    }
-
-    let answers = Answer::get_by_question_id(&pool, question_id).await?;
+    let answers = Answer::get_by_question(&pool, question_id.into_inner()).await?;
     Ok(HttpResponse::Ok().json(answers))
 }

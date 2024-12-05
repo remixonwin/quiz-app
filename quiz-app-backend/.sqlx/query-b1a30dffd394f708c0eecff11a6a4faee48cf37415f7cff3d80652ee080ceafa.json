@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DROP TABLE IF EXISTS quiz_attempts CASCADE",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "b1a30dffd394f708c0eecff11a6a4faee48cf37415f7cff3d80652ee080ceafa"
+}

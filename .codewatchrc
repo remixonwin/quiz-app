@@ -1,0 +1,37 @@
+{
+  "ignore_patterns": [
+    "target/",
+    "node_modules/",
+    "dist/",
+    "build/",
+    ".cache/",
+    "*.o",
+    "*.a",
+    "*.so",
+    "*.dylib",
+    "package-lock.json",
+    "yarn.lock",
+    "Cargo.lock",
+    ".idea/",
+    ".vscode/",
+    "*.swp",
+    "*.log",
+    "tmp/",
+    "temp/",
+    ".env",
+    ".env.*",
+    "coverage/"
+  ],
+  "documentation": {
+    "template_path": null,
+    "output_format": "markdown",
+    "include_metrics": false,
+    "include_dependencies": false
+  },
+  "analysis": {
+    "min_complexity_threshold": 1.0,
+    "max_complexity_threshold": 10.0,
+    "min_coverage_threshold": 0.8,
+    "exclude_test_files": true
+  }
+}

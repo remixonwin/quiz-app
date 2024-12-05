@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DROP TRIGGER IF EXISTS update_quizzes_updated_at ON quizzes CASCADE",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "8c3bf613ba82c5502a2274b380df2734098a8226195c95cc4e5e732a2f6840e4"
+}

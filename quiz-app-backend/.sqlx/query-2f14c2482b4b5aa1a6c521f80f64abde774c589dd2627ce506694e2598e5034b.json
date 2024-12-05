@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        CREATE TABLE IF NOT EXISTS quiz_attempts (\n            id SERIAL PRIMARY KEY,\n            quiz_id INTEGER NOT NULL REFERENCES quizzes(id) ON DELETE CASCADE,\n            user_id INTEGER NOT NULL REFERENCES users(id),\n            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,\n            completed_at TIMESTAMPTZ,\n            score INTEGER,\n            UNIQUE(quiz_id, user_id, created_at)\n        )\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "2f14c2482b4b5aa1a6c521f80f64abde774c589dd2627ce506694e2598e5034b"
+}

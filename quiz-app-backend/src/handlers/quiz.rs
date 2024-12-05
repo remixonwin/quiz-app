@@ -1,17 +1,16 @@
-use actix_web::{web, HttpResponse, get, post, put, delete};
+use actix_web::{get, post, put, delete, web, HttpResponse};
 use sqlx::PgPool;
 use uuid::Uuid;
-use chrono::Utc;
 
-use crate::auth::Claims;
-use crate::error::AppError;
-use crate::models::{Quiz, QuizAttempt, UserAnswer, CreateQuiz, DbModel};
+use crate::{
+    auth::Claims,
+    error::AppError,
+    models::{Quiz, CreateQuiz, UpdateQuiz},
+};
 
 #[get("")]
 pub async fn get_quizzes(
     pool: web::Data<PgPool>,
-    #[allow(unused_variables)]
-    claims: Claims,
 ) -> Result<HttpResponse, AppError> {
     let quizzes = Quiz::get_all(&pool).await?;
     Ok(HttpResponse::Ok().json(quizzes))
@@ -20,16 +19,10 @@ pub async fn get_quizzes(
 #[post("")]
 pub async fn create_quiz(
     pool: web::Data<PgPool>,
-    form: web::Json<CreateQuiz>,
-    #[allow(unused_variables)]
     claims: Claims,
+    quiz_data: web::Json<CreateQuiz>,
 ) -> Result<HttpResponse, AppError> {
-    let mut quiz_data = form.into_inner();
-    quiz_data.created_by = Some(claims.user_id);
-    quiz_data.id = None;
-    quiz_data.created_at = Utc::now().naive_utc();
-    quiz_data.updated_at = Utc::now().naive_utc();
-    let quiz = Quiz::create(&pool, quiz_data).await?;
+    let quiz = Quiz::create(&pool, claims.user_id, quiz_data.into_inner()).await?;
     Ok(HttpResponse::Created().json(quiz))
 }
 
@@ -37,28 +30,27 @@ pub async fn create_quiz(
 pub async fn get_quiz(
     pool: web::Data<PgPool>,
     quiz_id: web::Path<Uuid>,
-    #[allow(unused_variables)]
-    claims: Claims,
 ) -> Result<HttpResponse, AppError> {
-    let quiz = Quiz::get_by_id(&pool, quiz_id.into_inner()).await?;
-    match quiz {
-        Some(quiz) => Ok(HttpResponse::Ok().json(quiz)),
-        None => Ok(HttpResponse::NotFound().finish()),
-    }
+    let quiz = Quiz::find_by_id(&pool, quiz_id.into_inner()).await?;
+    Ok(HttpResponse::Ok().json(quiz))
 }
 
 #[put("/{quiz_id}")]
 pub async fn update_quiz(
     pool: web::Data<PgPool>,
     quiz_id: web::Path<Uuid>,
-    form: web::Json<CreateQuiz>,
-    #[allow(unused_variables)]
     claims: Claims,
+    quiz_data: web::Json<UpdateQuiz>,
 ) -> Result<HttpResponse, AppError> {
-    let mut quiz_data = form.into_inner();
-    quiz_data.id = Some(quiz_id.into_inner());
-    quiz_data.updated_at = Utc::now().naive_utc();
-    let quiz = Quiz::update(&pool, quiz_data).await?;
+    let quiz_id = quiz_id.into_inner();
+    let quiz = Quiz::find_by_id(&pool, quiz_id).await?;
+    
+    // Check if user owns the quiz
+    if quiz.creator_id != claims.user_id {
+        return Err(AppError::Forbidden("You do not own this quiz".to_string()));
+    }
+
+    let quiz = Quiz::update(&pool, quiz_id, quiz_data.into_inner()).await?;
     Ok(HttpResponse::Ok().json(quiz))
 }
 
@@ -68,7 +60,15 @@ pub async fn delete_quiz(
     quiz_id: web::Path<Uuid>,
     claims: Claims,
 ) -> Result<HttpResponse, AppError> {
-    Quiz::delete(&pool, quiz_id.into_inner(), claims.user_id).await?;
+    let quiz_id = quiz_id.into_inner();
+    let quiz = Quiz::find_by_id(&pool, quiz_id).await?;
+    
+    // Check if user owns the quiz
+    if quiz.creator_id != claims.user_id {
+        return Err(AppError::Forbidden("You do not own this quiz".to_string()));
+    }
+
+    Quiz::delete(&pool, quiz_id).await?;
     Ok(HttpResponse::NoContent().finish())
 }
 
@@ -76,20 +76,8 @@ pub async fn delete_quiz(
 pub async fn submit_quiz(
     pool: web::Data<PgPool>,
     quiz_id: web::Path<Uuid>,
-    _answers: web::Json<Vec<UserAnswer>>,
-    #[allow(unused_variables)]
     claims: Claims,
 ) -> Result<HttpResponse, AppError> {
-    let now = Utc::now().naive_utc();
-    let quiz_attempt = QuizAttempt::create(&pool, QuizAttempt {
-        id: Uuid::new_v4(),
-        quiz_id: quiz_id.into_inner(),
-        user_id: claims.user_id,
-        score: None,
-        completed_at: Some(now),
-        created_at: now,
-        updated_at: now,
-    }).await?;
-
-    Ok(HttpResponse::Created().json(quiz_attempt))
+    let quiz = Quiz::find_by_id(&pool, quiz_id.into_inner()).await?;
+    Ok(HttpResponse::Created().json(quiz))
 }

@@ -1,74 +1,75 @@
 -- Drop existing tables
+DROP TABLE IF EXISTS attempt_answers CASCADE;
 DROP TABLE IF EXISTS quiz_attempts CASCADE;
-DROP TABLE IF EXISTS submitted_answers CASCADE;
 DROP TABLE IF EXISTS answers CASCADE;
 DROP TABLE IF EXISTS questions CASCADE;
 DROP TABLE IF EXISTS quizzes CASCADE;
 DROP TABLE IF EXISTS users CASCADE;
 
--- Enable uuid-ossp extension for UUID generation
+-- Create extension for UUID support
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- Create users table with id as UUID
+-- Create users table
 CREATE TABLE users (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    username TEXT NOT NULL UNIQUE,
-    password_hash TEXT NOT NULL,
-    role TEXT NOT NULL,
-    created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
+    username VARCHAR(255) NOT NULL UNIQUE,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    role VARCHAR(50) NOT NULL DEFAULT 'user',
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- Create quizzes table with id as UUID and created_by as UUID
+-- Create quizzes table
 CREATE TABLE quizzes (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    title TEXT NOT NULL,
+    title VARCHAR(255) NOT NULL,
     description TEXT,
-    created_by UUID NOT NULL REFERENCES users(id),
-    created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
+    creator_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- Create questions table with id as UUID and quiz_id as UUID
+-- Create questions table
 CREATE TABLE questions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    quiz_id UUID NOT NULL REFERENCES quizzes(id),
-    question_text TEXT NOT NULL,
+    quiz_id UUID NOT NULL REFERENCES quizzes(id) ON DELETE CASCADE,
+    text TEXT NOT NULL,
     order_num INTEGER NOT NULL DEFAULT 0,
-    created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- Create answers table with id as UUID and question_id as UUID
+-- Create answers table
 CREATE TABLE answers (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    question_id UUID NOT NULL REFERENCES questions(id),
+    question_id UUID NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
     text TEXT NOT NULL,
     is_correct BOOLEAN NOT NULL DEFAULT false,
     order_num INTEGER NOT NULL DEFAULT 0,
-    created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- Create quiz_attempts table with id as UUID, quiz_id and user_id as UUID
+-- Create quiz_attempts table
 CREATE TABLE quiz_attempts (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    quiz_id UUID NOT NULL REFERENCES quizzes(id),
-    user_id UUID NOT NULL REFERENCES users(id),
-    score INT,
-    completed_at TIMESTAMP WITHOUT TIME ZONE,
-    created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
+    quiz_id UUID NOT NULL REFERENCES quizzes(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    score INTEGER,
+    completed_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(quiz_id, user_id)
 );
 
--- Create submitted_answers table with id as UUID, attempt_id, question_id, and answer_id as UUID
-CREATE TABLE submitted_answers (
+-- Create attempt_answers table
+CREATE TABLE attempt_answers (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    attempt_id UUID NOT NULL REFERENCES quiz_attempts(id),
-    question_id UUID NOT NULL REFERENCES questions(id),
-    answer_id UUID NOT NULL REFERENCES answers(id),
+    attempt_id UUID NOT NULL REFERENCES quiz_attempts(id) ON DELETE CASCADE,
+    question_id UUID NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
+    answer_id UUID NOT NULL REFERENCES answers(id) ON DELETE CASCADE,
     is_correct BOOLEAN NOT NULL DEFAULT false,
-    created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(attempt_id, question_id)
 );

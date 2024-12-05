@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        CREATE TABLE IF NOT EXISTS quizzes (\n            id SERIAL PRIMARY KEY,\n            title VARCHAR(255) NOT NULL,\n            description TEXT,\n            creator_id INTEGER NOT NULL REFERENCES users(id),\n            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,\n            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP\n        )\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "3ea969b6219f7e476744e6b8ba255bdb6b91fcd0b685a08a069b583d27081068"
+}

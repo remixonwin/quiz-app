@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DROP FUNCTION IF EXISTS update_updated_at_column CASCADE",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "848369ecc1e7151ce42db64034b0bfd8f8f5d985ebe74eda2c16336910e75474"
+}

@@ -8,19 +8,20 @@ import {
   TextField,
   Paper,
 } from '@mui/material';
+import { Answer } from '../../types/quiz';
 
 interface QuestionDisplayProps {
   questionText: string;
-  options?: string[];
+  answers: Answer[];
   isMultipleChoice: boolean;
-  currentAnswer: string;
-  onAnswerChange: (answer: string) => void;
+  currentAnswer?: number;
+  onAnswerChange: (answerId: number) => void;
   questionNumber: number;
 }
 
 const QuestionDisplay: React.FC<QuestionDisplayProps> = ({
   questionText,
-  options = [],
+  answers,
   isMultipleChoice,
   currentAnswer,
   onAnswerChange,
@@ -38,14 +39,14 @@ const QuestionDisplay: React.FC<QuestionDisplayProps> = ({
       {isMultipleChoice ? (
         <RadioGroup
           value={currentAnswer}
-          onChange={(e) => onAnswerChange(e.target.value)}
+          onChange={(e) => onAnswerChange(Number(e.target.value))}
         >
-          {options.map((option, index) => (
+          {answers.map((answer) => (
             <FormControlLabel
-              key={index}
-              value={option}
+              key={answer.id}
+              value={answer.id}
               control={<Radio />}
-              label={option}
+              label={answer.answer_text}
             />
           ))}
         </RadioGroup>
@@ -56,8 +57,8 @@ const QuestionDisplay: React.FC<QuestionDisplayProps> = ({
             multiline
             rows={4}
             variant="outlined"
-            value={currentAnswer}
-            onChange={(e) => onAnswerChange(e.target.value)}
+            value={currentAnswer !== undefined ? String(currentAnswer) : ''}
+            onChange={(e) => onAnswerChange(Number(e.target.value))}
             placeholder="Type your answer here..."
           />
         </Box>

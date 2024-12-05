@@ -1,6 +1,15 @@
 // Removed unused imports
 
 pub async fn init_db(pool: &sqlx::postgres::PgPool) -> Result<(), sqlx::Error> {
+    // Skip database initialization if SKIP_MIGRATIONS is set
+    if std::env::var("SKIP_MIGRATIONS").is_ok() {
+        println!("Skipping database migrations due to SKIP_MIGRATIONS environment variable");
+        return Ok(());
+    }
+
+    // Create UUID extension if it doesn't exist
+    sqlx::query!("CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\"").execute(pool).await?;
+
     // Drop existing tables and triggers in reverse order of dependencies
     sqlx::query!("DROP TRIGGER IF EXISTS update_quizzes_updated_at ON quizzes CASCADE").execute(pool).await?;
     sqlx::query!("DROP FUNCTION IF EXISTS update_updated_at_column CASCADE").execute(pool).await?;
@@ -15,7 +24,7 @@ pub async fn init_db(pool: &sqlx::postgres::PgPool) -> Result<(), sqlx::Error> {
     sqlx::query!(
         r#"
         CREATE TABLE IF NOT EXISTS users (
-            id SERIAL PRIMARY KEY,
+            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
             username VARCHAR(255) NOT NULL UNIQUE,
             email VARCHAR(255) NOT NULL UNIQUE,
             password_hash VARCHAR(255) NOT NULL,
@@ -30,10 +39,10 @@ pub async fn init_db(pool: &sqlx::postgres::PgPool) -> Result<(), sqlx::Error> {
     sqlx::query!(
         r#"
         CREATE TABLE IF NOT EXISTS quizzes (
-            id SERIAL PRIMARY KEY,
+            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
             title VARCHAR(255) NOT NULL,
             description TEXT,
-            creator_id INTEGER NOT NULL REFERENCES users(id),
+            creator_id UUID NOT NULL REFERENCES users(id),
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
@@ -82,8 +91,8 @@ pub async fn init_db(pool: &sqlx::postgres::PgPool) -> Result<(), sqlx::Error> {
     sqlx::query!(
         r#"
         CREATE TABLE IF NOT EXISTS questions (
-            id SERIAL PRIMARY KEY,
-            quiz_id INTEGER NOT NULL REFERENCES quizzes(id) ON DELETE CASCADE,
+            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+            quiz_id UUID NOT NULL REFERENCES quizzes(id) ON DELETE CASCADE,
             text TEXT NOT NULL,
             question_type VARCHAR(50) NOT NULL,
             order_num INTEGER NOT NULL,
@@ -99,8 +108,8 @@ pub async fn init_db(pool: &sqlx::postgres::PgPool) -> Result<(), sqlx::Error> {
     sqlx::query!(
         r#"
         CREATE TABLE IF NOT EXISTS answers (
-            id SERIAL PRIMARY KEY,
-            question_id INTEGER NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
+            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+            question_id UUID NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
             text TEXT NOT NULL,
             is_correct BOOLEAN NOT NULL,
             order_num INTEGER NOT NULL,
@@ -115,9 +124,9 @@ pub async fn init_db(pool: &sqlx::postgres::PgPool) -> Result<(), sqlx::Error> {
     sqlx::query!(
         r#"
         CREATE TABLE IF NOT EXISTS quiz_attempts (
-            id SERIAL PRIMARY KEY,
-            quiz_id INTEGER NOT NULL REFERENCES quizzes(id) ON DELETE CASCADE,
-            user_id INTEGER NOT NULL REFERENCES users(id),
+            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+            quiz_id UUID NOT NULL REFERENCES quizzes(id) ON DELETE CASCADE,
+            user_id UUID NOT NULL REFERENCES users(id),
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             completed_at TIMESTAMPTZ,
             score INTEGER,
@@ -132,10 +141,10 @@ pub async fn init_db(pool: &sqlx::postgres::PgPool) -> Result<(), sqlx::Error> {
     sqlx::query!(
         r#"
         CREATE TABLE IF NOT EXISTS submitted_answers (
-            id SERIAL PRIMARY KEY,
-            attempt_id INTEGER NOT NULL REFERENCES quiz_attempts(id) ON DELETE CASCADE,
-            question_id INTEGER NOT NULL REFERENCES questions(id),
-            answer_id INTEGER NOT NULL REFERENCES answers(id),
+            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+            attempt_id UUID NOT NULL REFERENCES quiz_attempts(id) ON DELETE CASCADE,
+            question_id UUID NOT NULL REFERENCES questions(id),
+            answer_id UUID NOT NULL REFERENCES answers(id),
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(attempt_id, question_id)
         )
@@ -162,14 +171,14 @@ mod tests {
 
     async fn create_test_pool() -> Result<PgPool, sqlx::Error> {
         let database_url = std::env::var("DATABASE_URL")
-            .unwrap_or_else(|_| "postgresql://remixonwin:600181@localhost/quiz_app".to_string());
+            .expect("DATABASE_URL must be set");
         create_pool(&database_url).await
     }
 
     #[tokio::test]
     async fn test_database_connection() {
         let pool = create_test_pool().await.expect("Failed to create pool");
-        let result = sqlx::query("SELECT 1").execute(&pool).await;
+        let result = sqlx::query!("SELECT 1").fetch_one(&pool).await;
         assert!(result.is_ok());
     }
 }

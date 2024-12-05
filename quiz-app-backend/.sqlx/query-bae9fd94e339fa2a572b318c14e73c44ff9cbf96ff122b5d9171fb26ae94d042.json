@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        CREATE OR REPLACE FUNCTION update_updated_at_column()\n        RETURNS TRIGGER AS $$\n        BEGIN\n            NEW.updated_at = CURRENT_TIMESTAMP;\n            RETURN NEW;\n        END;\n        $$ language 'plpgsql'\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "bae9fd94e339fa2a572b318c14e73c44ff9cbf96ff122b5d9171fb26ae94d042"
+}

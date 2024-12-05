@@ -100,7 +100,7 @@ pub async fn seed_database(pool: &PgPool) -> Result<(), sqlx::Error> {
         for (text, is_correct, order_num) in answers {
             sqlx::query!(
                 r#"
-                INSERT INTO answers (question_id, answer_text, is_correct, order_num)
+                INSERT INTO answers (question_id, text, is_correct, order_num)
                 VALUES ($1, $2, $3, $4)
                 "#,
                 question.id,

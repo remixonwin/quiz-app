@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        CREATE TRIGGER update_quizzes_updated_at\n            BEFORE UPDATE ON quizzes\n            FOR EACH ROW\n            EXECUTE FUNCTION update_updated_at_column()\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "fb3d32f870990b73aeee9cfc8657ce746ba14d1695f86c22523884642a399cb9"
+}

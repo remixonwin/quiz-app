@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM quizzes\n            WHERE id = $1 AND created_by = $2\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f7de4aa65cfd46f3a0f0ec64cc5c5d266fa985eec03f30268abc593d04ef28af"
+}

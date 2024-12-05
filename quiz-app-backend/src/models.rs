@@ -1,248 +1,295 @@
-use crate::{
-    error::AppError,
-};
-use chrono::{Utc, NaiveDateTime};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, PgPool};
-use async_trait::async_trait;
+use sqlx::PgPool;
 use uuid::Uuid;
-use bcrypt::{hash, DEFAULT_COST};
 
-#[async_trait]
-pub trait DbModel {
-    type CreateForm;
-    type UpdateForm;
+use crate::{auth, error::AppError};
 
-    async fn create(pool: &PgPool, form: Self::CreateForm) -> Result<Self, AppError> where Self: Sized;
-    async fn update(pool: &PgPool, form: Self::UpdateForm) -> Result<Self, AppError> where Self: Sized;
-    async fn delete(pool: &PgPool, id: Uuid, user_id: Uuid) -> Result<(), AppError> where Self: Sized;
-}
-
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct User {
-    pub id: Uuid, 
-    pub username: String,
-    pub password_hash: String,
-    pub role: String,
-    pub created_at: NaiveDateTime,
-    pub updated_at: NaiveDateTime,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct CreateUser {
-    pub username: String,
-    pub password: String,
-    pub role: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct LoginCredentials {
-    pub username: String,
-    pub password: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct UpdateUser {
-    pub id: Option<Uuid>,
-    pub username: Option<String>,
-    pub password: Option<String>,
-    pub role: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct CreateUserResponse {
     pub id: Uuid,
     pub username: String,
+    pub email: String,
+    #[serde(skip_serializing)]
+    pub password_hash: String,
     pub role: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
-#[async_trait]
-impl DbModel for User {
-    type CreateForm = CreateUser;
-    type UpdateForm = UpdateUser;
-
-    async fn create(pool: &PgPool, form: Self::CreateForm) -> Result<Self, AppError> {
-        let now = Utc::now().naive_utc();
-        let user = sqlx::query_as!(
-            Self,
-            r#"
-            INSERT INTO users (username, password_hash, role, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $5)
-            RETURNING id, username, password_hash, role, created_at, updated_at
-            "#,
-            form.username,
-            hash(&form.password, DEFAULT_COST).map_err(|_| AppError::HashError)?,
-            form.role.unwrap_or_else(|| "user".to_string()),
-            now,
-            now
-        )
-        .fetch_one(pool)
-        .await?;
-
-        Ok(user)
-    }
-
-    async fn update(pool: &PgPool, form: Self::UpdateForm) -> Result<Self, AppError> {
-        let now = Utc::now().naive_utc();
-        let user_id = form.id.unwrap_or_else(|| Uuid::new_v4());
-
-        // Fetch the existing user to get current values
-        let existing_user = sqlx::query_as!(
-            Self,
-            "SELECT * FROM users WHERE id = $1",
-            user_id
-        )
-        .fetch_optional(pool)
-        .await?
-        .ok_or(AppError::NotFound("User not found".to_string()))?;
-
-        let username = form.username.unwrap_or(existing_user.username);
-        let role = form.role.unwrap_or(existing_user.role);
-
-        // If password is provided, hash it
-        let password_hash = match form.password {
-            Some(password) => hash(&password, DEFAULT_COST)
-                .map_err(|_| AppError::HashError)?,
-            None => existing_user.password_hash,
-        };
-
-        let user = sqlx::query_as!(
-            Self,
-            r#"
-            UPDATE users
-            SET username = $1, password_hash = $2, role = $3, updated_at = $4
-            WHERE id = $5
-            RETURNING id, username, password_hash, role, created_at, updated_at
-            "#,
-            username,
-            password_hash,
-            role,
-            now,
-            user_id
-        )
-        .fetch_one(pool)
-        .await?;
-
-        Ok(user)
-    }
-
-    async fn delete(pool: &PgPool, id: Uuid, _user_id: Uuid) -> Result<(), AppError> {
-        sqlx::query!("DELETE FROM users WHERE id = $1", id)
-            .execute(pool)
-            .await?;
-        Ok(())
-    }
+#[derive(Debug, Deserialize)]
+pub struct CreateUser {
+    pub username: String,
+    pub email: String,
+    pub password: String,
 }
 
-impl User {
-    pub async fn get_by_id(pool: &PgPool, user_id: Uuid) -> Result<Option<Self>, AppError> {
-        sqlx::query_as!(
-            User,
-            "SELECT * FROM users WHERE id = $1",
-            user_id
-        )
-        .fetch_optional(pool)
-        .await
-        .map_err(|e| AppError::DatabaseError(e))
-    }
+#[derive(Debug, Deserialize)]
+pub struct UpdateUser {
+    pub username: Option<String>,
+    pub email: Option<String>,
+    pub password: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Quiz {
     pub id: Uuid,
     pub title: String,
     pub description: Option<String>,
-    pub created_by: Uuid,
-    pub created_at: NaiveDateTime,
-    pub updated_at: NaiveDateTime,
+    pub creator_id: Uuid,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateQuiz {
+    pub title: String,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateQuiz {
+    pub title: Option<String>,
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct CreateQuiz {
-    pub id: Option<Uuid>,
-    pub title: String,
-    pub description: Option<String>,
-    pub created_by: Option<Uuid>,
-    pub created_at: NaiveDateTime,
-    pub updated_at: NaiveDateTime,
+pub struct Question {
+    pub id: Uuid,
+    pub quiz_id: Uuid,
+    pub text: String,
+    pub order_num: i32,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
-#[async_trait]
-impl DbModel for Quiz {
-    type CreateForm = CreateQuiz;
-    type UpdateForm = CreateQuiz;
+#[derive(Debug, Deserialize)]
+pub struct CreateQuestion {
+    pub quiz_id: Uuid,
+    pub text: String,
+    pub order_num: i32,
+}
 
-    async fn create(pool: &PgPool, form: Self::CreateForm) -> Result<Self, AppError> {
-        let now = Utc::now().naive_utc();
-        let quiz = sqlx::query_as!(
-            Self,
+#[derive(Debug, Deserialize)]
+pub struct UpdateQuestion {
+    pub text: Option<String>,
+    pub order_num: Option<i32>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Answer {
+    pub id: Uuid,
+    pub question_id: Uuid,
+    pub text: String,
+    pub is_correct: bool,
+    pub order_num: i32,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateAnswer {
+    pub question_id: Uuid,
+    pub text: String,
+    pub is_correct: bool,
+    pub order_num: i32,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateAnswer {
+    pub text: Option<String>,
+    pub is_correct: Option<bool>,
+    pub order_num: Option<i32>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct QuizAttempt {
+    pub id: Uuid,
+    pub quiz_id: Uuid,
+    pub user_id: Uuid,
+    pub score: Option<i32>,
+    pub completed_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateQuizAttempt {
+    pub quiz_id: Uuid,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AttemptAnswer {
+    pub id: Uuid,
+    pub attempt_id: Uuid,
+    pub question_id: Uuid,
+    pub answer_id: Uuid,
+    pub is_correct: bool,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateAttemptAnswer {
+    pub attempt_id: Uuid,
+    pub question_id: Uuid,
+    pub answer_id: Uuid,
+}
+
+impl User {
+    pub async fn create(pool: &PgPool, user: CreateUser) -> Result<User, AppError> {
+        let password_hash = auth::hash_password(&user.password).await?;
+        
+        sqlx::query_as!(
+            User,
             r#"
-            INSERT INTO quizzes (title, description, created_by, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $5)
-            RETURNING id, title, description, created_by, created_at, updated_at
+            INSERT INTO users (username, email, password_hash, role, created_at, updated_at)
+            VALUES ($1, $2, $3, 'user', $4, $5)
+            RETURNING id, username, email, password_hash, role, created_at, updated_at
             "#,
-            form.title,
-            form.description,
-            form.created_by.unwrap_or_else(|| Uuid::new_v4()),
-            now,
-            now
+            user.username,
+            user.email,
+            password_hash,
+            Utc::now(),
+            Utc::now(),
         )
         .fetch_one(pool)
-        .await?;
-
-        Ok(quiz)
+        .await
+        .map_err(AppError::from)
     }
 
-    async fn update(pool: &PgPool, form: Self::UpdateForm) -> Result<Self, AppError> {
-        let now = Utc::now().naive_utc();
-        let quiz = sqlx::query_as!(
-            Self,
+    pub async fn find_by_id(pool: &PgPool, id: Uuid) -> Result<User, AppError> {
+        sqlx::query_as!(
+            User,
             r#"
-            UPDATE quizzes
-            SET title = $1, description = $2, updated_at = $3
+            SELECT id, username, email, password_hash, role, created_at, updated_at
+            FROM users
+            WHERE id = $1
+            "#,
+            id
+        )
+        .fetch_one(pool)
+        .await
+        .map_err(AppError::from)
+    }
+
+    pub async fn find_by_email(pool: &PgPool, email: &str) -> Result<User, AppError> {
+        sqlx::query_as!(
+            User,
+            r#"
+            SELECT id, username, email, password_hash, role, created_at, updated_at
+            FROM users
+            WHERE email = $1
+            "#,
+            email
+        )
+        .fetch_one(pool)
+        .await
+        .map_err(AppError::from)
+    }
+
+    pub async fn update(pool: &PgPool, id: Uuid, user: UpdateUser) -> Result<User, AppError> {
+        let current_user = Self::find_by_id(pool, id).await?;
+        
+        let password_hash = match user.password {
+            Some(password) => Some(auth::hash_password(&password).await?),
+            None => None,
+        };
+
+        sqlx::query_as!(
+            User,
+            r#"
+            UPDATE users
+            SET 
+                username = COALESCE($1, username),
+                email = COALESCE($2, email),
+                password_hash = COALESCE($3, password_hash),
+                updated_at = CURRENT_TIMESTAMP
             WHERE id = $4
-            RETURNING id, title, description, created_by, created_at, updated_at
+            RETURNING id, username, email, password_hash, role, created_at, updated_at
             "#,
-            form.title,
-            form.description,
-            now,
-            form.id.unwrap_or_else(|| Uuid::new_v4())
+            user.username,
+            user.email,
+            password_hash,
+            id
         )
         .fetch_one(pool)
-        .await?;
-
-        Ok(quiz)
+        .await
+        .map_err(AppError::from)
     }
 
-    async fn delete(pool: &PgPool, id: Uuid, user_id: Uuid) -> Result<(), AppError> {
-        let result = sqlx::query!(
+    pub async fn delete(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
+        sqlx::query!(
             r#"
-            DELETE FROM quizzes
-            WHERE id = $1 AND created_by = $2
+            DELETE FROM users
+            WHERE id = $1
             "#,
-            id,
-            user_id
+            id
         )
         .execute(pool)
-        .await?;
+        .await
+        .map_err(AppError::from)?;
 
-        if result.rows_affected() == 0 {
-            Err(AppError::NotFound("Quiz not found or unauthorized".into()))
-        } else {
-            Ok(())
-        }
+        Ok(())
     }
 }
 
 impl Quiz {
-    pub async fn get_all(pool: &PgPool) -> Result<Vec<Self>, AppError> {
-        let quizzes = sqlx::query_as!(
-            Self,
+    pub async fn create(pool: &PgPool, creator_id: Uuid, quiz: CreateQuiz) -> Result<Quiz, AppError> {
+        sqlx::query_as!(
+            Quiz,
             r#"
-            SELECT id, title, description, created_by, created_at, updated_at
+            INSERT INTO quizzes (title, description, creator_id, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5)
+            RETURNING id, title, description, creator_id, created_at, updated_at
+            "#,
+            quiz.title,
+            quiz.description,
+            creator_id,
+            Utc::now(),
+            Utc::now(),
+        )
+        .fetch_one(pool)
+        .await
+        .map_err(AppError::from)
+    }
+
+    pub async fn find_by_id(pool: &PgPool, id: Uuid) -> Result<Quiz, AppError> {
+        sqlx::query_as!(
+            Quiz,
+            r#"
+            SELECT id, title, description, creator_id, created_at, updated_at
             FROM quizzes
-            ORDER BY created_at DESC
-            "#
+            WHERE id = $1
+            "#,
+            id
+        )
+        .fetch_one(pool)
+        .await
+        .map_err(AppError::from)
+    }
+
+    pub async fn find_by_creator(pool: &PgPool, creator_id: Uuid) -> Result<Vec<Quiz>, AppError> {
+        sqlx::query_as!(
+            Quiz,
+            r#"
+            SELECT id, title, description, creator_id, created_at, updated_at
+            FROM quizzes
+            WHERE creator_id = $1
+            "#,
+            creator_id
+        )
+        .fetch_all(pool)
+        .await
+        .map_err(AppError::from)
+    }
+
+    pub async fn get_all(pool: &PgPool) -> Result<Vec<Quiz>, AppError> {
+        let quizzes = sqlx::query_as!(
+            Quiz,
+            r#"
+            SELECT id, title, description, creator_id, created_at, updated_at
+            FROM quizzes
+            "#,
         )
         .fetch_all(pool)
         .await?;
@@ -250,148 +297,68 @@ impl Quiz {
         Ok(quizzes)
     }
 
-    pub async fn get_by_id(pool: &PgPool, id: Uuid) -> Result<Option<Self>, AppError> {
-        let quiz = sqlx::query_as!(
-            Self,
+    pub async fn update(pool: &PgPool, id: Uuid, quiz: UpdateQuiz) -> Result<Quiz, AppError> {
+        sqlx::query_as!(
+            Quiz,
             r#"
-            SELECT id, title, description, created_by, created_at, updated_at
-            FROM quizzes
+            UPDATE quizzes
+            SET 
+                title = COALESCE($1, title),
+                description = COALESCE($2, description),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = $3
+            RETURNING id, title, description, creator_id, created_at, updated_at
+            "#,
+            quiz.title,
+            quiz.description,
+            id
+        )
+        .fetch_one(pool)
+        .await
+        .map_err(AppError::from)
+    }
+
+    pub async fn delete(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
+        sqlx::query!(
+            r#"
+            DELETE FROM quizzes
             WHERE id = $1
             "#,
             id
         )
-        .fetch_optional(pool)
-        .await?;
+        .execute(pool)
+        .await
+        .map_err(AppError::from)?;
 
-        Ok(quiz)
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, FromRow)]
-pub struct Question {
-    pub id: Uuid, 
-    pub quiz_id: Uuid, 
-    pub question_text: String,
-    pub order_num: i32,
-    pub created_at: NaiveDateTime,
-    pub updated_at: NaiveDateTime,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct CreateQuestion {
-    pub quiz_id: Uuid, 
-    pub question_text: String,
-    pub order_num: i32,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct UpdateQuestionRequest {
-    pub id: Uuid,
-    pub quiz_id: Uuid,
-    pub question_text: String,
-    pub order_num: i32,
-    pub created_by: Uuid,
-    pub updated_at: NaiveDateTime,
-}
-
-#[async_trait]
-impl DbModel for Question {
-    type CreateForm = CreateQuestion;
-    type UpdateForm = UpdateQuestionRequest;
-
-    async fn create(pool: &PgPool, form: Self::CreateForm) -> Result<Self, AppError> {
-        let now = Utc::now().naive_utc();
-        let question = sqlx::query_as!(
-            Self,
-            r#"
-            INSERT INTO questions (quiz_id, question_text, order_num, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $5)
-            RETURNING id, quiz_id, question_text, order_num, created_at, updated_at
-            "#,
-            form.quiz_id,
-            form.question_text,
-            form.order_num,
-            now,
-            now
-        )
-        .fetch_one(pool)
-        .await?;
-
-        Ok(question)
-    }
-
-    async fn update(pool: &PgPool, form: Self::UpdateForm) -> Result<Self, AppError> {
-        let now = Utc::now().naive_utc();
-        let question = sqlx::query_as!(
-            Self,
-            r#"
-            UPDATE questions
-            SET question_text = $1, order_num = $2, updated_at = $3
-            WHERE id = $4 AND quiz_id = $5
-            RETURNING id, quiz_id, question_text, order_num, created_at, updated_at
-            "#,
-            form.question_text,
-            form.order_num,
-            now,
-            form.id,
-            form.quiz_id
-        )
-        .fetch_one(pool)
-        .await?;
-
-        Ok(question)
-    }
-
-    async fn delete(pool: &PgPool, id: Uuid, user_id: Uuid) -> Result<(), AppError> {
-        let quiz = sqlx::query!(
-            r#"
-            SELECT created_by
-            FROM quizzes
-            WHERE id = (SELECT quiz_id FROM questions WHERE id = $1)
-            "#,
-            id
-        )
-        .fetch_one(pool)
-        .await?;
-
-        if quiz.created_by != user_id {
-            return Err(AppError::Unauthorized("Not authorized to delete this question".into()));
-        }
-
-        let result = sqlx::query!("DELETE FROM questions WHERE id = $1", id)
-            .execute(pool)
-            .await?;
-
-        if result.rows_affected() == 0 {
-            Err(AppError::NotFound("Question not found".into()))
-        } else {
-            Ok(())
-        }
+        Ok(())
     }
 }
 
 impl Question {
-    pub async fn get_by_id(pool: &PgPool, id: Uuid) -> Result<Option<Self>, AppError> {
-        let question = sqlx::query_as!(
-            Self,
+    pub async fn create(pool: &PgPool, question: CreateQuestion) -> Result<Question, AppError> {
+        sqlx::query_as!(
+            Question,
             r#"
-            SELECT id, quiz_id, question_text, order_num, created_at, updated_at
-            FROM questions
-            WHERE id = $1
+            INSERT INTO questions (quiz_id, text, order_num, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5)
+            RETURNING id, quiz_id, text, order_num, created_at, updated_at
             "#,
-            id
+            question.quiz_id,
+            question.text,
+            question.order_num,
+            Utc::now(),
+            Utc::now(),
         )
-        .fetch_optional(pool)
-        .await?;
-
-        Ok(question)
+        .fetch_one(pool)
+        .await
+        .map_err(AppError::from)
     }
 
-    pub async fn get_by_quiz_id(pool: &PgPool, quiz_id: Uuid) -> Result<Vec<Self>, AppError> {
-        let questions = sqlx::query_as!(
-            Self,
+    pub async fn find_by_quiz(pool: &PgPool, quiz_id: Uuid) -> Result<Vec<Question>, AppError> {
+        sqlx::query_as!(
+            Question,
             r#"
-            SELECT id, quiz_id, question_text, order_num, created_at, updated_at
+            SELECT id, quiz_id, text, order_num, created_at, updated_at
             FROM questions
             WHERE quiz_id = $1
             ORDER BY order_num
@@ -399,100 +366,89 @@ impl Question {
             quiz_id
         )
         .fetch_all(pool)
-        .await?;
-
-        Ok(questions)
+        .await
+        .map_err(AppError::from)
     }
-}
 
-#[derive(Debug, Serialize, Deserialize, FromRow)]
-pub struct Answer {
-    pub id: Uuid,
-    pub question_id: Uuid,
-    pub answer_text: String,
-    pub is_correct: bool,
-    pub order_num: i32,
-    pub created_at: NaiveDateTime,
-    pub updated_at: NaiveDateTime,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct CreateAnswer {
-    pub question_id: Uuid,
-    pub answer_text: String,
-    pub is_correct: bool,
-    pub order_num: i32,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct UpdateAnswerRequest {
-    pub id: Uuid,
-    pub text: Option<String>,
-    pub is_correct: Option<bool>,
-}
-
-#[async_trait]
-impl DbModel for Answer {
-    type CreateForm = CreateAnswer;
-    type UpdateForm = UpdateAnswerRequest;
-
-    async fn create(pool: &PgPool, form: Self::CreateForm) -> Result<Self, AppError> {
-        let now = Utc::now().naive_utc();
-        let answer = sqlx::query_as!(
-            Self,
+    pub async fn find_by_id(pool: &PgPool, id: Uuid) -> Result<Question, AppError> {
+        let question = sqlx::query_as!(Question,
             r#"
-            INSERT INTO answers (question_id, answer_text, is_correct, order_num, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6)
-            RETURNING id, question_id, answer_text, is_correct, order_num, created_at, updated_at
+            SELECT id, quiz_id, text, order_num, created_at, updated_at
+            FROM questions
+            WHERE id = $1
             "#,
-            form.question_id,
-            form.answer_text,
-            form.is_correct,
-            form.order_num,
-            now,
-            now
+            id
         )
         .fetch_one(pool)
-        .await?;
+        .await
+        .map_err(|e| AppError::DatabaseError(e.to_string()))?;
 
-        Ok(answer)
+        Ok(question)
     }
 
-    async fn update(pool: &PgPool, form: Self::UpdateForm) -> Result<Self, AppError> {
-        let now = Utc::now().naive_utc();
-        let answer = sqlx::query_as!(
-            Self,
+    pub async fn update(pool: &PgPool, id: Uuid, question: UpdateQuestion) -> Result<Question, AppError> {
+        sqlx::query_as!(
+            Question,
             r#"
-            UPDATE answers
-            SET answer_text = $1, is_correct = $2, updated_at = $3
-            WHERE id = $4
-            RETURNING id, question_id, answer_text, is_correct, order_num, created_at, updated_at
+            UPDATE questions
+            SET 
+                text = COALESCE($1, text),
+                order_num = COALESCE($2, order_num),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = $3
+            RETURNING id, quiz_id, text, order_num, created_at, updated_at
             "#,
-            form.text.unwrap_or_else(|| "".to_string()),
-            form.is_correct.unwrap_or(false),
-            now,
-            form.id
+            question.text,
+            question.order_num,
+            id
         )
         .fetch_one(pool)
-        .await?;
-
-        Ok(answer)
+        .await
+        .map_err(AppError::from)
     }
 
-    async fn delete(pool: &PgPool, id: Uuid, _user_id: Uuid) -> Result<(), AppError> {
-        sqlx::query!("DELETE FROM answers WHERE id = $1", id)
-            .execute(pool)
-            .await?;
+    pub async fn delete(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
+        sqlx::query!(
+            r#"
+            DELETE FROM questions
+            WHERE id = $1
+            "#,
+            id
+        )
+        .execute(pool)
+        .await
+        .map_err(AppError::from)?;
+
         Ok(())
     }
 }
 
 impl Answer {
-    pub async fn get_by_question_id(pool: &PgPool, question_id: Uuid) -> Result<Vec<Self>, AppError> {
-        let answers = sqlx::query_as!(
-            Self,
+    pub async fn create(pool: &PgPool, answer: CreateAnswer) -> Result<Answer, AppError> {
+        sqlx::query_as!(
+            Answer,
             r#"
-            SELECT id, question_id, answer_text, is_correct, order_num, created_at, updated_at
+            INSERT INTO answers (question_id, text, is_correct, order_num, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            RETURNING id, question_id, text, is_correct, order_num, created_at, updated_at
+            "#,
+            answer.question_id,
+            answer.text,
+            answer.is_correct,
+            answer.order_num,
+            Utc::now(),
+            Utc::now(),
+        )
+        .fetch_one(pool)
+        .await
+        .map_err(AppError::from)
+    }
+
+    pub async fn find_by_question(pool: &PgPool, question_id: Uuid) -> Result<Vec<Answer>, AppError> {
+        sqlx::query_as!(
+            Answer,
+            r#"
+            SELECT id, question_id, text, is_correct, order_num, created_at, updated_at
             FROM answers
             WHERE question_id = $1
             ORDER BY order_num
@@ -500,119 +456,163 @@ impl Answer {
             question_id
         )
         .fetch_all(pool)
-        .await?;
-
-        Ok(answers)
+        .await
+        .map_err(AppError::from)
     }
 
-    pub async fn get_by_id(pool: &PgPool, answer_id: Uuid) -> Result<Option<Self>, AppError> {
-        let answer = sqlx::query_as!(
-            Answer,
+    pub async fn find_by_id(pool: &PgPool, id: Uuid) -> Result<Answer, AppError> {
+        let answer = sqlx::query_as!(Answer,
             r#"
-            SELECT id, question_id, answer_text, is_correct, order_num, created_at, updated_at
+            SELECT id, question_id, text, is_correct, order_num, created_at, updated_at
             FROM answers
             WHERE id = $1
             "#,
-            answer_id
+            id
         )
-        .fetch_optional(pool)
-        .await?;
+        .fetch_one(pool)
+        .await
+        .map_err(|e| AppError::DatabaseError(e.to_string()))?;
 
         Ok(answer)
     }
-}
 
-#[derive(Debug, Serialize, Deserialize, FromRow, Clone)]
-pub struct QuizAttempt {
-    pub id: Uuid,
-    pub quiz_id: Uuid,
-    pub user_id: Uuid,
-    pub score: Option<i32>,
-    pub completed_at: Option<NaiveDateTime>,
-    pub created_at: NaiveDateTime,
-    pub updated_at: NaiveDateTime,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct UserAnswer {
-    pub question_id: Uuid,
-    pub selected_answer_id: Uuid,
-}
-
-#[async_trait]
-impl DbModel for QuizAttempt {
-    type CreateForm = Self;
-    type UpdateForm = Self;
-
-    async fn create(pool: &PgPool, form: Self::CreateForm) -> Result<Self, AppError> {
-        let now = Utc::now().naive_utc();
-        let quiz_attempt = sqlx::query_as!(
-            Self,
+    pub async fn update(pool: &PgPool, id: Uuid, answer: UpdateAnswer) -> Result<Answer, AppError> {
+        sqlx::query_as!(
+            Answer,
             r#"
-            INSERT INTO quiz_attempts (id, quiz_id, user_id, score, completed_at, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
-            RETURNING id, quiz_id, user_id, score, completed_at, created_at, updated_at
-            "#,
-            form.id,
-            form.quiz_id,
-            form.user_id,
-            form.score,
-            form.completed_at,
-            now,
-            now
-        )
-        .fetch_one(pool)
-        .await?;
-
-        Ok(quiz_attempt)
-    }
-
-    async fn update(pool: &PgPool, form: Self::UpdateForm) -> Result<Self, AppError> {
-        let now = Utc::now().naive_utc();
-        let quiz_attempt = sqlx::query_as!(
-            Self,
-            r#"
-            UPDATE quiz_attempts
-            SET score = $1, completed_at = $2, updated_at = $3
+            UPDATE answers
+            SET 
+                text = COALESCE($1, text),
+                is_correct = COALESCE($2, is_correct),
+                order_num = COALESCE($3, order_num),
+                updated_at = CURRENT_TIMESTAMP
             WHERE id = $4
-            RETURNING id, quiz_id, user_id, score, completed_at, created_at, updated_at
+            RETURNING id, question_id, text, is_correct, order_num, created_at, updated_at
             "#,
-            form.score,
-            form.completed_at,
-            now,
-            form.id
+            answer.text,
+            answer.is_correct,
+            answer.order_num,
+            id
         )
         .fetch_one(pool)
-        .await?;
-
-        Ok(quiz_attempt)
+        .await
+        .map_err(AppError::from)
     }
 
-    async fn delete(pool: &PgPool, id: Uuid, _user_id: Uuid) -> Result<(), AppError> {
-        sqlx::query!("DELETE FROM quiz_attempts WHERE id = $1", id)
-            .execute(pool)
-            .await?;
+    pub async fn delete(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
+        sqlx::query!(
+            r#"
+            DELETE FROM answers
+            WHERE id = $1
+            "#,
+            id
+        )
+        .execute(pool)
+        .await
+        .map_err(AppError::from)?;
+
         Ok(())
     }
 }
 
 impl QuizAttempt {
-    /// Finds all quiz attempts for a specific quiz.
-    /// This method is currently unused but may be used in future analytics or reporting features.
-    #[allow(dead_code)]
-    pub async fn find_by_quiz_id(pool: &PgPool, quiz_id: Uuid) -> Result<Vec<QuizAttempt>, AppError> {
-        let quiz_attempts = sqlx::query_as!(
+    pub async fn create(pool: &PgPool, user_id: Uuid, attempt: CreateQuizAttempt) -> Result<QuizAttempt, AppError> {
+        sqlx::query_as!(
+            QuizAttempt,
+            r#"
+            INSERT INTO quiz_attempts (quiz_id, user_id)
+            VALUES ($1, $2)
+            RETURNING id, quiz_id, user_id, score, completed_at, created_at, updated_at
+            "#,
+            attempt.quiz_id,
+            user_id
+        )
+        .fetch_one(pool)
+        .await
+        .map_err(AppError::from)
+    }
+
+    pub async fn find_by_user(pool: &PgPool, user_id: Uuid) -> Result<Vec<QuizAttempt>, AppError> {
+        sqlx::query_as!(
             QuizAttempt,
             r#"
             SELECT id, quiz_id, user_id, score, completed_at, created_at, updated_at
             FROM quiz_attempts
-            WHERE quiz_id = $1
+            WHERE user_id = $1
             "#,
-            quiz_id
+            user_id
         )
         .fetch_all(pool)
-        .await?;
+        .await
+        .map_err(AppError::from)
+    }
 
-        Ok(quiz_attempts)
+    pub async fn complete(pool: &PgPool, id: Uuid, score: i32) -> Result<QuizAttempt, AppError> {
+        sqlx::query_as!(
+            QuizAttempt,
+            r#"
+            UPDATE quiz_attempts
+            SET 
+                score = $1,
+                completed_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = $2
+            RETURNING id, quiz_id, user_id, score, completed_at, created_at, updated_at
+            "#,
+            score,
+            id
+        )
+        .fetch_one(pool)
+        .await
+        .map_err(AppError::from)
+    }
+}
+
+impl AttemptAnswer {
+    pub async fn create(pool: &PgPool, answer: CreateAttemptAnswer) -> Result<AttemptAnswer, AppError> {
+        // First, verify if the answer is correct
+        let is_correct = sqlx::query_scalar!(
+            r#"
+            SELECT is_correct
+            FROM answers
+            WHERE id = $1 AND question_id = $2
+            "#,
+            answer.answer_id,
+            answer.question_id
+        )
+        .fetch_one(pool)
+        .await
+        .map_err(AppError::from)?;
+
+        sqlx::query_as!(
+            AttemptAnswer,
+            r#"
+            INSERT INTO attempt_answers (attempt_id, question_id, answer_id, is_correct)
+            VALUES ($1, $2, $3, $4)
+            RETURNING id, attempt_id, question_id, answer_id, is_correct, created_at
+            "#,
+            answer.attempt_id,
+            answer.question_id,
+            answer.answer_id,
+            is_correct
+        )
+        .fetch_one(pool)
+        .await
+        .map_err(AppError::from)
+    }
+
+    pub async fn find_by_attempt(pool: &PgPool, attempt_id: Uuid) -> Result<Vec<AttemptAnswer>, AppError> {
+        sqlx::query_as!(
+            AttemptAnswer,
+            r#"
+            SELECT id, attempt_id, question_id, answer_id, is_correct, created_at
+            FROM attempt_answers
+            WHERE attempt_id = $1
+            "#,
+            attempt_id
+        )
+        .fetch_all(pool)
+        .await
+        .map_err(AppError::from)
     }
 }

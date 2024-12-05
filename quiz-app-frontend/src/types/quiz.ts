@@ -1,5 +1,6 @@
 export interface Answer {
     id?: number;
+    question_id?: number;
     answer_text: string;
     is_correct: boolean;
     created_at?: string;

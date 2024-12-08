@@ -60,7 +60,12 @@ const QuizCard: React.FC<QuizCardProps> = ({ quiz, onDelete, isOwner = false }) 
       }}
     >
       <CardContent sx={{ flexGrow: 1 }}>
-        <Typography gutterBottom variant="h5" component="h2">
+        <Typography 
+          gutterBottom 
+          variant="h5" 
+          component="h2"
+          data-testid={`quiz-title-${quiz.title}`}
+        >
           {quiz.title}
         </Typography>
         <Typography variant="body2" color="text.secondary" paragraph>
@@ -90,6 +95,7 @@ const QuizCard: React.FC<QuizCardProps> = ({ quiz, onDelete, isOwner = false }) 
               color="primary" 
               onClick={handlePlay}
               size="small"
+              aria-label="Take Quiz"
             >
               <PlayIcon />
             </IconButton>
@@ -98,6 +104,7 @@ const QuizCard: React.FC<QuizCardProps> = ({ quiz, onDelete, isOwner = false }) 
             <IconButton
               onClick={handleShare}
               size="small"
+              aria-label="Share Quiz"
             >
               <ShareIcon />
             </IconButton>
@@ -110,6 +117,7 @@ const QuizCard: React.FC<QuizCardProps> = ({ quiz, onDelete, isOwner = false }) 
                 onClick={handleEdit}
                 size="small"
                 color="info"
+                aria-label="Edit Quiz"
               >
                 <EditIcon />
               </IconButton>
@@ -119,6 +127,7 @@ const QuizCard: React.FC<QuizCardProps> = ({ quiz, onDelete, isOwner = false }) 
                 onClick={() => quiz.id && onDelete?.(quiz.id)}
                 size="small"
                 color="error"
+                aria-label="Delete Quiz"
               >
                 <DeleteIcon />
               </IconButton>

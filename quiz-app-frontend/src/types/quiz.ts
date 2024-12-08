@@ -7,14 +7,14 @@ export interface Answer {
 }
 
 export interface Question {
-    id?: number;
+    id: number;
     quiz_id?: number;
-    text?: string;
+    text: string;
     question_text: string;
     question_type: 'multiple_choice' | 'true_false';
-    is_multiple_choice?: boolean;
+    is_multiple_choice: boolean;
     answers: Answer[];
-    options?: string[];
+    options: string[];
     created_at?: string;
     updated_at?: string;
 }

@@ -1,9 +1,11 @@
 #[cfg(test)]
 mod db_tests {
     use sqlx::PgPool;
-    use quiz_app_backend::models::CreateUser;
+    use quiz_app_backend::models::user::{CreateUser, User};
+    use quiz_app_backend::models::DbModel;
     use chrono::Utc;
     use dotenv::dotenv;
+    use uuid::Uuid;
 
     async fn setup() -> PgPool {
         dotenv().ok();
@@ -11,51 +13,32 @@ mod db_tests {
         PgPool::connect(&database_url).await.unwrap()
     }
 
-    #[tokio::test]
-    async fn test_user_creation() {
-        let pool = setup().await;
-
+    #[sqlx::test]
+    async fn test_create_user(pool: PgPool) {
         let new_user = CreateUser {
             username: "testuser".to_string(),
+            email: format!("test{}@example.com", Uuid::new_v4()),
             password: "password123".to_string(),
         };
 
-        let result = sqlx::query!(
-            r#"
-            INSERT INTO users (username, password_hash, created_at)
-            VALUES ($1, $2, $3)
-            RETURNING id, username, password_hash, created_at
-            "#,
-            new_user.username,
-            new_user.password,
-            Utc::now()
-        )
-        .fetch_one(&pool)
-        .await;
-
+        let result = User::create(&pool, new_user).await;
         assert!(result.is_ok());
-        
-        // Cleanup
-        let user = result.unwrap();
-        let _ = sqlx::query!("DELETE FROM users WHERE id = $1", user.id)
-            .execute(&pool)
-            .await;
     }
 
-    #[tokio::test]
-    async fn test_quiz_creation() {
-        let pool = setup().await;
-
+    #[sqlx::test]
+    async fn test_quiz_creation(pool: PgPool) {
         // First create a user to be the creator
         let user_result = sqlx::query!(
             r#"
-            INSERT INTO users (username, password_hash, created_at)
-            VALUES ($1, $2, $3)
+            INSERT INTO users (username, password_hash, created_at, role, email)
+            VALUES ($1, $2, $3, $4, $5)
             RETURNING id, username, password_hash, role, created_at, updated_at
             "#,
-            "quizcreator",
+            format!("quizcreator_{}", Uuid::new_v4()),
             "password123",
-            Utc::now()
+            Utc::now(),
+            "user",
+            format!("quizcreator_{}@example.com", Uuid::new_v4())
         )
         .fetch_one(&pool)
         .await

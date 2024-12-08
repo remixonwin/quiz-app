@@ -15,8 +15,14 @@ import { quizService } from '../services/api';
 import { Quiz } from '../types';
 
 interface Answer {
-  questionId: number;
-  answer: string;
+  question_id: number;
+  answer_text: string;
+  selected_answer?: string;
+}
+
+interface SubmittedAnswer {
+  question_id: number;
+  answer_id: number;
 }
 
 const TakeQuiz: React.FC = () => {
@@ -24,7 +30,7 @@ const TakeQuiz: React.FC = () => {
   const navigate = useNavigate();
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [answers, setAnswers] = useState<Answer[]>([]);
-  const [timeRemaining, setTimeRemaining] = useState<number>(1800); // 30 minutes
+  const [timeRemaining] = useState<number>(600); // Remove unused setter
 
   const { data: quiz, loading, error, refetch } = useDataFetching<Quiz>(
     () => quizService.getQuizDetails(Number(id)),
@@ -35,9 +41,14 @@ const TakeQuiz: React.FC = () => {
     if (!quiz?.questions?.length) return;
 
     try {
+      const submittedAnswers: SubmittedAnswer[] = answers.map(answer => ({
+        question_id: answer.question_id,
+        answer_id: parseInt(answer.selected_answer || '0'),
+      }));
+
       await quizService.submitQuiz({
-        quizId: Number(id),
-        answers,
+        quiz_id: Number(id),
+        answers: submittedAnswers,
       });
       navigate('/quiz/results');
     } catch (error) {
@@ -51,20 +62,23 @@ const TakeQuiz: React.FC = () => {
     const currentQuestion = quiz.questions[currentQuestionIndex];
     if (!currentQuestion?.id) return;
 
-    const questionId = currentQuestion.id;
     setAnswers((prev) => {
-      const newAnswers = [...prev];
-      const existingIndex = newAnswers.findIndex(
-        (a) => a.questionId === questionId
+      const existingIndex = prev.findIndex(
+        (a) => a.question_id === currentQuestion.id
       );
 
-      if (existingIndex >= 0) {
-        newAnswers[existingIndex].answer = answer;
-      } else {
-        newAnswers.push({ questionId, answer });
-      }
+      const newAnswer = {
+        question_id: currentQuestion.id,
+        answer_text: currentQuestion.question_text,
+        selected_answer: answer,
+      };
 
-      return newAnswers;
+      if (existingIndex >= 0) {
+        const newAnswers = [...prev];
+        newAnswers[existingIndex] = newAnswer;
+        return newAnswers;
+      }
+      return [...prev, newAnswer];
     });
   };
 
@@ -74,8 +88,7 @@ const TakeQuiz: React.FC = () => {
     const currentQuestion = quiz.questions[currentQuestionIndex];
     if (!currentQuestion?.id) return '';
 
-    const questionId = currentQuestion.id;
-    return answers.find((a) => a.questionId === questionId)?.answer || '';
+    return answers.find((a) => a.question_id === currentQuestion.id)?.selected_answer || '';
   };
 
   const handleNext = () => {
@@ -126,6 +139,7 @@ const TakeQuiz: React.FC = () => {
         currentAnswer={getCurrentAnswer()}
         onAnswerChange={handleAnswer}
         questionNumber={currentQuestionIndex + 1}
+        totalQuestions={quiz.questions.length}
       />
 
       <Box

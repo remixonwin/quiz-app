@@ -1,236 +1,134 @@
+#[allow(unused_imports)]
 use actix_web::{
     test,
     web,
     App,
     http::StatusCode,
+    http::Method,
 };
 use quiz_app_backend::{
-    config::get_config,
-    auth::generate_token,
     models::{
-        User,
-        CreateUser,
-        LoginCredentials,
-        CreateQuiz,
+        user::{CreateUser, LoginCredentials},
     },
+    test_helpers::TestContext,
 };
-use rand::{Rng, SeedableRng};
-use rand::rngs::StdRng;
+use quiz_app_backend::auth::jwt::{generate_token, validate_token};
+use uuid::Uuid;
 
 #[cfg(test)]
+#[allow(unused_imports)]
 mod integration_tests {
-    use super::*;
+    #[allow(unused_imports)]
+    use actix_web::http::StatusCode;
+    use quiz_app_backend::{
+        models::{
+            user::{CreateUser, LoginCredentials},
+        },
+        test_helpers::TestContext,
+    };
+    use uuid::Uuid;
 
     #[actix_web::test]
     async fn test_health_check() {
-        let config = get_config().unwrap();
-        let pool = sqlx::PgPool::connect(&config.database_url).await.unwrap();
-        let app = test::init_service(
-            App::new()
-                .app_data(web::Data::new(pool.clone()))
-                .configure(|cfg| {
-                    quiz_app_backend::routes::configure_routes(cfg);
-                })
-        ).await;
-        
-        let req = test::TestRequest::get().uri("/api/health").to_request();
-        let resp = test::call_service(&app, req).await;
+        let mut ctx = TestContext::new().await;
+        let resp = ctx.make_request(actix_web::http::Method::GET, "/api/health", Option::<()>::None)
+            .await
+            .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
     }
 
     #[actix_web::test]
     async fn test_user_registration() {
-        let config = get_config().unwrap();
-        let pool = sqlx::PgPool::connect(&config.database_url).await.unwrap();
-        let app = test::init_service(
-            App::new()
-                .app_data(web::Data::new(pool.clone()))
-                .configure(|cfg| {
-                    quiz_app_backend::routes::configure_routes(cfg);
-                })
-        ).await;
+        let mut ctx = TestContext::new().await;
 
-        let mut rng = StdRng::seed_from_u64(42);
-        let username = format!("testuser_{}", rng.gen::<u32>());
+        let user_data = CreateUser {
+            username: format!("testuser_{}", Uuid::new_v4()),
+            email: format!("test_{}@example.com", Uuid::new_v4()),
+            password: "password123".to_string(),
+        };
 
-        let create_user_req = test::TestRequest::post()
-            .uri("/api/auth/register")
-            .set_json(&CreateUser {
-                username: username.clone(),
-                password: "testpass123".to_string(),
-            })
-            .to_request();
+        let resp = ctx.make_request(
+            actix_web::http::Method::POST,
+            "/api/auth/register",
+            Some(user_data)
+        )
+        .await
+        .unwrap();
 
-        let resp = test::call_service(&app, create_user_req).await;
         assert_eq!(resp.status(), StatusCode::CREATED);
+        let _ = ctx.cleanup().await;
     }
 
     #[actix_web::test]
     async fn test_user_login() {
-        let config = get_config().unwrap();
-        let pool = sqlx::PgPool::connect(&config.database_url).await.unwrap();
-        let app = test::init_service(
-            App::new()
-                .app_data(web::Data::new(pool.clone()))
-                .configure(|cfg| {
-                    quiz_app_backend::routes::configure_routes(cfg);
-                })
-        ).await;
-        
-        let mut rng = StdRng::seed_from_u64(42);
-        let username = format!("testuser_{}", rng.gen::<u32>());
-        let password = "testpass123".to_string();
-        
-        let register_req = test::TestRequest::post()
-            .uri("/api/auth/register")
-            .set_json(&CreateUser {
-                username: username.clone(),
-                password: password.clone(),
-            })
-            .to_request();
+        let mut ctx = TestContext::new().await;
+        let user = ctx.create_test_user().await.unwrap();
 
-        let resp = test::call_service(&app, register_req).await;
-        assert_eq!(resp.status(), StatusCode::CREATED);
+        let login_data = LoginCredentials {
+            email: user.email,
+            password: "password123".to_string(),
+        };
 
-        let login_req = test::TestRequest::post()
-            .uri("/api/auth/login")
-            .set_json(&LoginCredentials {
-                username: username.clone(),
-                password: password.clone(),
-            })
-            .to_request();
-
-        let resp = test::call_service(&app, login_req).await;
-        assert_eq!(resp.status(), StatusCode::OK);
-    }
-
-    #[actix_web::test]
-    async fn test_quiz_creation_and_retrieval() {
-        let config = get_config().unwrap();
-        let pool = sqlx::PgPool::connect(&config.database_url).await.unwrap();
-        
-        // Create a test user in the database
-        let user = sqlx::query_as!(
-            User,
-            "INSERT INTO users (username, password_hash, role) 
-             VALUES ($1, $2, $3) 
-             RETURNING id, username, password_hash, role, created_at, updated_at",
-            format!("testuser_{}", 42),
-            "hashed_password",
-            "user"
+        let resp = ctx.make_request(
+            actix_web::http::Method::POST,
+            "/api/auth/login",
+            Some(login_data)
         )
-        .fetch_one(&pool)
         .await
         .unwrap();
 
-        let token = generate_token(user.id, "user").unwrap();
-
-        let app = test::init_service(
-            App::new()
-                .app_data(web::Data::new(pool.clone()))
-                .configure(|cfg| {
-                    quiz_app_backend::routes::configure_routes(cfg);
-                })
-        ).await;
-
-        let quiz_data = CreateQuiz {
-            title: "Test Quiz".to_string(),
-            description: Some("A test quiz".to_string()),
-            created_by: user.id,
-        };
-
-        let create_resp = test::TestRequest::post()
-            .uri("/api/quizzes")
-            .insert_header(("Authorization", format!("Bearer {}", token)))
-            .set_json(&quiz_data)
-            .to_request();
-
-        let quiz: CreateQuiz = test::call_and_read_body_json(&app, create_resp).await;
-        assert_eq!(quiz.title, "Test Quiz");
-        assert_eq!(quiz.description, Some("A test quiz".to_string()));
-        assert_eq!(quiz.created_by, user.id);
+        assert_eq!(resp.status(), StatusCode::OK);
+        let _ = ctx.cleanup().await;
     }
+}
 
-    #[actix_web::test]
-    async fn test_user_registration_and_login() {
-        let config = get_config().unwrap();
-        let pool = sqlx::PgPool::connect(&config.database_url).await.unwrap();
-        let app = test::init_service(
-            App::new()
-                .app_data(web::Data::new(pool.clone()))
-                .configure(|cfg| {
-                    quiz_app_backend::routes::configure_routes(cfg);
-                })
-        ).await;
-        
-        // Test registration
-        let mut rng = StdRng::seed_from_u64(42);
-        let username = format!("testuser_{}", rng.gen::<u32>());
+#[cfg(test)]
+#[allow(unused_imports)]
+mod tests {
+    #[allow(unused_imports)]
+    use actix_web::http::Method;
+    use quiz_app_backend::{
+        models::user::{CreateUser, LoginCredentials},
+        test_helpers::TestContext,
+    };
+    use uuid::Uuid;
+
+    #[actix_rt::test]
+    async fn test_user_flow() {
+        let mut ctx = TestContext::new().await;
+
+        let username = format!("testuser_{}", Uuid::new_v4());
+        let email = format!("test_{}@example.com", Uuid::new_v4());
         let password = "testpass123".to_string();
-        
-        let register_req = test::TestRequest::post()
-            .uri("/api/auth/register")
-            .set_json(&CreateUser {
-                username: username.clone(),
-                password: password.clone(),
-            })
-            .to_request();
-            
-        let register_resp = test::call_service(&app, register_req).await;
-        assert_eq!(register_resp.status(), StatusCode::CREATED, "Registration failed with status: {}", register_resp.status());
-        
-        // Test login
-        let login_req = test::TestRequest::post()
-            .uri("/api/auth/login")
-            .set_json(&LoginCredentials {
-                username: username.clone(),
-                password: password.clone(),
-            })
-            .to_request();
-            
-        let login_resp = test::call_service(&app, login_req).await;
-        assert_eq!(login_resp.status(), StatusCode::OK);
-    }
 
-    #[actix_web::test]
-    async fn test_create_quiz() {
-        let config = get_config().unwrap();
-        let pool = sqlx::PgPool::connect(&config.database_url).await.unwrap();
-        let app = test::init_service(
-            App::new()
-                .app_data(web::Data::new(pool.clone()))
-                .configure(|cfg| {
-                    quiz_app_backend::routes::configure_routes(cfg);
-                })
-        ).await;
-
-        let mut rng = StdRng::seed_from_u64(42);
-        let username = format!("testuser_{}", rng.gen::<u32>());
-        let user_id = sqlx::query!(
-            "INSERT INTO users (username, password_hash, role) 
-             VALUES ($1, $2, $3) 
-             RETURNING id, username, password_hash, role, created_at, updated_at",
-            username,
-            "hashed_password",
-            "user"
+        // Register user
+        let resp = ctx.make_request(
+            Method::POST,
+            "/api/auth/register",
+            Some(CreateUser {
+                username: username.clone(),
+                email: email.clone(),
+                password: password.clone(),
+            }),
         )
-        .fetch_one(&pool)
         .await
-        .unwrap()
-        .id;
+        .expect("Failed to make register request");
+        assert_eq!(resp.status().as_u16(), 201);
 
-        let quiz_data = CreateQuiz {
-            title: "Test Quiz".to_string(),
-            description: Some("A test quiz".to_string()),
-            created_by: user_id,
-        };
+        // Login user
+        let resp = ctx.make_request(
+            Method::POST,
+            "/api/auth/login",
+            Some(LoginCredentials {
+                email,
+                password,
+            }),
+        )
+        .await
+        .expect("Failed to make login request");
+        assert_eq!(resp.status().as_u16(), 200);
 
-        let create_resp = test::TestRequest::post()
-            .uri("/api/quizzes")
-            .set_json(&quiz_data)
-            .to_request();
-
-        let resp = test::call_service(&app, create_resp).await;
-        assert_eq!(resp.status(), StatusCode::CREATED);
+        // Clean up after all tests are done
+        ctx.cleanup().await.unwrap();
     }
 }

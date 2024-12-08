@@ -7,6 +7,7 @@ import {
   Radio,
   TextField,
   Paper,
+  Alert,
 } from '@mui/material';
 
 interface QuestionDisplayProps {
@@ -16,6 +17,8 @@ interface QuestionDisplayProps {
   currentAnswer: string;
   onAnswerChange: (answer: string) => void;
   questionNumber: number;
+  totalQuestions: number;
+  error?: string;
 }
 
 const QuestionDisplay: React.FC<QuestionDisplayProps> = ({
@@ -25,11 +28,21 @@ const QuestionDisplay: React.FC<QuestionDisplayProps> = ({
   currentAnswer,
   onAnswerChange,
   questionNumber,
+  totalQuestions,
+  error,
 }) => {
+  if (error) {
+    return (
+      <Alert severity="error" sx={{ mb: 3 }}>
+        {error}
+      </Alert>
+    );
+  }
+
   return (
     <Paper elevation={2} sx={{ p: 3, mb: 3 }}>
       <Typography variant="h6" gutterBottom>
-        Question {questionNumber}
+        Question {questionNumber} of {totalQuestions}
       </Typography>
       <Typography variant="body1" sx={{ mb: 3 }}>
         {questionText}

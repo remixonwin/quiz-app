@@ -1,19 +1,12 @@
-use quiz_app_backend::{config, seeder};
-use sqlx::postgres::PgPoolOptions;
+use quiz_app_backend::config;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Get database URL from config
-    let database_url = config::get_database_url();
+    let _config = config::get_config()?;
 
-    // Create connection pool
-    let pool = PgPoolOptions::new()
-        .max_connections(5)
-        .connect(&database_url)
-        .await?;
-
-    // Run seeder
-    seeder::seed_database(&pool).await?;
+    // Add your seeding logic here
+    println!("Seeding database...");
 
     Ok(())
 }

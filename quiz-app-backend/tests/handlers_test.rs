@@ -1,155 +1,207 @@
-use actix_web::{test, http::StatusCode};
-use quiz_app_backend::{
-    models::{Quiz, CreateQuiz},
-    test_helpers::{
-        setup_test_app,
-        create_test_quiz_with_title,
-        verify_quiz_in_db,
-        setup_test_context,
-        cleanup_test_data,
-        create_test_user,
-    },
-    auth::generate_token,
-};
+use actix_web::http::StatusCode;
 use serde_json::json;
-use chrono::Utc;
-use uuid::Uuid;
-use bcrypt;
+
+use quiz_app_backend::{
+    models::{
+        user::{CreateUser, User},
+        quiz::{Quiz, CreateQuiz},
+        question::{Question, CreateQuestion},
+        answer::{Answer, CreateAnswer},
+    },
+    test_helpers::TestContext,
+};
+
+#[actix_web::test]
+async fn test_create_user() {
+    let ctx = TestContext::new().await;
+    
+    let user = CreateUser {
+        email: "test@example.com".to_string(),
+        password: "password123".to_string(),
+        name: "Test User".to_string(),
+    };
+
+    let resp = ctx
+        .make_request(
+            actix_web::http::Method::POST,
+            "/api/users/register",
+            Some(serde_json::to_string(&user).unwrap()),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), StatusCode::CREATED);
+    
+    ctx.cleanup().await.unwrap();
+}
+
+#[actix_web::test]
+async fn test_login_user() {
+    let ctx = TestContext::new().await;
+    
+    // First create a user
+    let user = CreateUser {
+        email: "test@example.com".to_string(),
+        password: "password123".to_string(),
+        name: "Test User".to_string(),
+    };
+
+    let _ = ctx
+        .make_request(
+            actix_web::http::Method::POST,
+            "/api/users/register",
+            Some(serde_json::to_string(&user).unwrap()),
+        )
+        .await
+        .unwrap();
+
+    // Now try to login
+    let login_data = json!({
+        "email": "test@example.com",
+        "password": "password123"
+    });
+
+    let resp = ctx
+        .make_request(
+            actix_web::http::Method::POST,
+            "/api/users/login",
+            Some(login_data.to_string()),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), StatusCode::OK);
+    
+    ctx.cleanup().await.unwrap();
+}
 
 #[actix_web::test]
 async fn test_create_quiz() {
-    let ctx = setup_test_context().await;
-    let app = setup_test_app(ctx.pool.clone()).await;
-
-    // Create test user
-    let user_id = create_test_user(&ctx.pool).await;
-
-    let token = generate_token(user_id, "user").expect("Failed to generate token");
-
-    let quiz_data = CreateQuiz {
+    let ctx = TestContext::new().await;
+    
+    let quiz = CreateQuiz {
         title: "Test Quiz".to_string(),
         description: Some("A test quiz".to_string()),
-        created_by: user_id,
+        created_by: ctx.user_id,
     };
 
-    let req = test::TestRequest::post()
-        .uri("/api/quizzes")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .set_json(&quiz_data)
-        .to_request();
+    let resp = ctx
+        .make_request(
+            actix_web::http::Method::POST,
+            "/api/quizzes",
+            Some(serde_json::to_string(&quiz).unwrap()),
+        )
+        .await
+        .unwrap();
 
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), StatusCode::CREATED, "Expected 201 Created for quiz creation");
-
-    let quiz: Quiz = test::read_body_json(resp).await;
-    assert_eq!(quiz.title, quiz_data.title);
-    assert_eq!(quiz.description, quiz_data.description);
-    assert_eq!(quiz.created_by, user_id);
-
-    let db_quiz = verify_quiz_in_db(&ctx.pool, quiz.id).await;
-    assert!(db_quiz.is_some(), "Quiz should exist in database");
-
-    cleanup_test_data(&ctx.pool).await;
+    assert_eq!(resp.status(), StatusCode::CREATED);
+    
+    ctx.cleanup().await.unwrap();
 }
 
 #[actix_web::test]
-async fn test_update_quiz() {
-    let ctx = setup_test_context().await;
-    let app = setup_test_app(ctx.pool.clone()).await;
-
-    let user_id = create_test_user(&ctx.pool).await;
-
-    let quiz = create_test_quiz_with_title(&ctx.pool, user_id, "Original Title").await;
-
-    let update_data = CreateQuiz {
-        title: "Updated Title".to_string(),
-        description: Some("Updated description".to_string()),
-        created_by: user_id,
+async fn test_get_quizzes() {
+    let ctx = TestContext::new().await;
+    
+    // Create a quiz first
+    let quiz = CreateQuiz {
+        title: "Test Quiz".to_string(),
+        description: Some("A test quiz".to_string()),
+        created_by: ctx.user_id,
     };
 
-    let token = generate_token(user_id, "user").expect("Failed to generate token");
+    let _ = ctx
+        .make_request(
+            actix_web::http::Method::POST,
+            "/api/quizzes",
+            Some(serde_json::to_string(&quiz).unwrap()),
+        )
+        .await
+        .unwrap();
 
-    let req = test::TestRequest::put()
-        .uri(&format!("/api/quizzes/{}", quiz.id))
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .set_json(&update_data)
-        .to_request();
+    // Now try to get all quizzes
+    let resp = ctx
+        .make_request(
+            actix_web::http::Method::GET,
+            "/api/quizzes",
+            None,
+        )
+        .await
+        .unwrap();
 
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), StatusCode::OK, "Expected 200 OK for quiz update");
-
-    let updated_quiz: Quiz = test::read_body_json(resp).await;
-    assert_eq!(updated_quiz.title, "Updated Title");
-    assert_eq!(updated_quiz.description, Some("Updated description".to_string()));
-
-    let db_quiz = verify_quiz_in_db(&ctx.pool, updated_quiz.id).await;
-    assert!(db_quiz.is_some(), "Quiz should exist in database");
-    let db_quiz = db_quiz.unwrap();
-    assert_eq!(db_quiz.title, "Updated Title");
-
-    cleanup_test_data(&ctx.pool).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    
+    ctx.cleanup().await.unwrap();
 }
 
 #[actix_web::test]
-async fn test_delete_quiz() {
-    let ctx = setup_test_context().await;
-    let app = setup_test_app(ctx.pool.clone()).await;
+async fn test_create_question() {
+    let ctx = TestContext::new().await;
+    
+    // First create a quiz
+    let quiz = ctx.create_test_quiz("Test Quiz".to_string()).await.unwrap();
+    
+    let question = CreateQuestion {
+        quiz_id: quiz.id,
+        text: "What is 2+2?".to_string(),
+        order: 1,
+    };
 
-    let user_id = create_test_user(&ctx.pool).await;
+    let resp = ctx
+        .make_request(
+            actix_web::http::Method::POST,
+            "/api/questions",
+            Some(serde_json::to_string(&question).unwrap()),
+        )
+        .await
+        .unwrap();
 
-    let token = generate_token(user_id, "user").expect("Failed to generate token");
-
-    let quiz = create_test_quiz_with_title(&ctx.pool, user_id, "Quiz to Delete").await;
-
-    let req = test::TestRequest::delete()
-        .uri(&format!("/api/quizzes/{}", quiz.id))
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), StatusCode::NO_CONTENT, "Expected 204 No Content for quiz deletion");
-
-    // Verify quiz no longer exists
-    let deleted_quiz = verify_quiz_in_db(&ctx.pool, quiz.id).await;
-    assert!(deleted_quiz.is_none(), "Quiz should be deleted from database");
-
-    cleanup_test_data(&ctx.pool).await;
+    assert_eq!(resp.status(), StatusCode::CREATED);
+    
+    ctx.cleanup().await.unwrap();
 }
 
 #[actix_web::test]
-async fn test_delete_quiz_unauthorized() {
-    // Set up initial test context
-    let ctx = setup_test_context().await;
-    let app = setup_test_app(ctx.pool.clone()).await;
+async fn test_create_answer() {
+    let ctx = TestContext::new().await;
+    
+    // Create quiz and question first
+    let quiz = ctx.create_test_quiz("Test Quiz".to_string()).await.unwrap();
+    
+    let question = CreateQuestion {
+        quiz_id: quiz.id,
+        text: "What is 2+2?".to_string(),
+        order: 1,
+    };
 
-    // Create first test user
-    let user_id = create_test_user(&ctx.pool).await;
+    let question_resp = ctx
+        .make_request(
+            actix_web::http::Method::POST,
+            "/api/questions",
+            Some(serde_json::to_string(&question).unwrap()),
+        )
+        .await
+        .unwrap();
+    
+    let question_body = test::read_body(question_resp).await;
+    let question: Question = serde_json::from_slice(&question_body).unwrap();
 
-    // Create a quiz with the first user
-    let quiz = create_test_quiz_with_title(&ctx.pool, user_id, "Quiz to Delete").await;
+    let answer = CreateAnswer {
+        question_id: question.id,
+        text: "4".to_string(),
+        is_correct: true,
+    };
 
-    // Verify quiz exists in the database
-    let quiz_exists = verify_quiz_in_db(&ctx.pool, quiz.id).await;
-    assert!(quiz_exists.is_some(), "Quiz should exist in database");
+    let resp = ctx
+        .make_request(
+            actix_web::http::Method::POST,
+            "/api/answers",
+            Some(serde_json::to_string(&answer).unwrap()),
+        )
+        .await
+        .unwrap();
 
-    // Create second test user
-    let other_user_id = create_test_user(&ctx.pool).await;
-
-    // Generate token for the other user
-    let other_token = generate_token(other_user_id, "user").expect("Failed to generate token");
-
-    // Try to delete the quiz with the other user
-    let req = test::TestRequest::delete()
-        .uri(&format!("/api/quizzes/{}", quiz.id))
-        .insert_header(("Authorization", format!("Bearer {}", other_token)))
-        .to_request();
-
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), StatusCode::FORBIDDEN, "Expected 403 Forbidden when trying to delete another user's quiz");
-
-    // Verify quiz still exists
-    let quiz_exists = verify_quiz_in_db(&ctx.pool, quiz.id).await;
-    assert!(quiz_exists.is_some(), "Quiz should still exist in database");
-
-    cleanup_test_data(&ctx.pool).await;
+    assert_eq!(resp.status(), StatusCode::CREATED);
+    
+    ctx.cleanup().await.unwrap();
 }

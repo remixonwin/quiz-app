@@ -18,13 +18,14 @@ import {
 } from '@mui/icons-material';
 import QuizStats from '../components/QuizStats';
 import { Quiz } from '../types';
-import axios from 'axios';
+import api from '../utils/axios-config'; 
 
 const QuizDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [quiz, setQuiz] = useState<Quiz | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Mock stats - replace with actual API data
   const quizStats = {
@@ -35,20 +36,20 @@ const QuizDetails: React.FC = () => {
   };
 
   useEffect(() => {
-    const fetchQuizDetails = async () => {
+    const fetchQuiz = async () => {
       try {
-        const response = await axios.get<Quiz>(
-          `http://localhost:8080/api/quizzes/${id}`
-        );
+        setLoading(true);
+        const response = await api.get<Quiz>(`/api/quizzes/${id}`);
         setQuiz(response.data);
       } catch (error) {
-        console.error('Failed to fetch quiz details:', error);
+        console.error('Error fetching quiz:', error);
+        setError(error instanceof Error ? error.message : 'Failed to fetch quiz details');
       } finally {
         setLoading(false);
       }
     };
 
-    fetchQuizDetails();
+    fetchQuiz();
   }, [id]);
 
   const handleShare = async () => {

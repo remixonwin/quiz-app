@@ -10,7 +10,7 @@ import {
   Box,
 } from '@mui/material';
 import { Button, CircularProgress } from '@mui/material';
-import axios from 'axios';
+import api from '../utils/axios-config'; 
 import { Quiz, Question, Answer } from '../types/quiz';
 
 interface QuizWithQuestions extends Quiz {
@@ -62,17 +62,19 @@ const QuizTakeContainer: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedAnswers, setSelectedAnswers] = useState<Record<number, number>>({});
+  const [submitting, setSubmitting] = useState(false);
+  const [result, setResult] = useState(null);
 
   useEffect(() => {
     const fetchQuiz = async () => {
       try {
-        const response = await axios.get<QuizWithQuestions>(
-          `http://localhost:8080/api/quizzes/${id}`
-        );
+        setLoading(true);
+        const response = await api.get<QuizWithQuestions>(`/api/quizzes/${id}`);
         setQuiz(response.data);
-        setLoading(false);
-      } catch (err) {
-        setError('Failed to fetch quiz');
+      } catch (error) {
+        console.error('Error fetching quiz:', error);
+        setError(error instanceof Error ? error.message : 'Failed to fetch quiz');
+      } finally {
         setLoading(false);
       }
     };
@@ -89,23 +91,18 @@ const QuizTakeContainer: React.FC = () => {
 
   const handleSubmit = async () => {
     try {
-      const submission = {
-        quiz_id: Number(id),
-        answers: Object.entries(selectedAnswers).map(([questionId, answerId]) => ({
-          question_id: Number(questionId),
-          answer_id: answerId,
-        })),
-      };
-
-      const response = await axios.post(
-        `http://localhost:8080/api/quizzes/${id}/submit`,
-        submission
+      setSubmitting(true);
+      const response = await api.post(
+        `/api/quizzes/${id}/submit`,
+        { answers: selectedAnswers }
       );
-
-      // Navigate to results page with the score
+      setResult(response.data);
       navigate(`/quiz/${id}/results`, { state: { results: response.data } });
     } catch (error) {
-      console.error('Failed to submit quiz:', error);
+      console.error('Error submitting quiz:', error);
+      setError(error instanceof Error ? error.message : 'Failed to submit quiz');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -141,7 +138,7 @@ const QuizTakeContainer: React.FC = () => {
         color="primary"
         fullWidth
         onClick={handleSubmit}
-        disabled={quiz.questions.length !== Object.keys(selectedAnswers).length}
+        disabled={quiz.questions.length !== Object.keys(selectedAnswers).length || submitting}
       >
         Submit Quiz
       </Button>

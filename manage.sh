@@ -168,9 +168,9 @@ main() {
 
 # Script entry point
 if [ $# -eq 0 ]; then
-    log_error "No command provided"
-    echo "Usage: $0 {setup|start|test [all|frontend|backend]|clean}"
-    exit 1
+    log_warning "No command provided, running all tests instead..."
+    run_tests all
+    exit 0
 fi
 
 main "$@"

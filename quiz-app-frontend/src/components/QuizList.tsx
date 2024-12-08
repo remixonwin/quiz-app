@@ -9,7 +9,7 @@ import {
   Typography,
 } from '@mui/material';
 import { Button, CircularProgress } from '@mui/material';
-import axios from 'axios';
+import api from '../utils/axios-config'; 
 import { Quiz } from '../types';
 
 const QuizList: React.FC = () => {
@@ -20,11 +20,13 @@ const QuizList: React.FC = () => {
   useEffect(() => {
     const fetchQuizzes = async () => {
       try {
-        const response = await axios.get<Quiz[]>('http://localhost:8080/api/quizzes');
+        setLoading(true);
+        const response = await api.get<Quiz[]>('/api/quizzes');
         setQuizzes(response.data);
-        setLoading(false);
-      } catch (err) {
-        setError('Failed to fetch quizzes');
+      } catch (error) {
+        console.error('Error fetching quizzes:', error);
+        setError(error instanceof Error ? error.message : 'Failed to fetch quizzes');
+      } finally {
         setLoading(false);
       }
     };

@@ -28,8 +28,12 @@ const QuizCreate: React.FC = () => {
       questions: [
         ...(quiz.questions || []),
         {
+          id: Date.now(), // Assign a unique number as ID
+          text: '',
           question_text: '',
           question_type: 'multiple_choice',
+          is_multiple_choice: true,
+          options: [],
           answers: [
             { answer_text: '', is_correct: false },
             { answer_text: '', is_correct: false },

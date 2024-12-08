@@ -13,7 +13,7 @@ import { useNavigate } from 'react-router-dom';
 import QuizCard from '../components/QuizCard';
 import QuizStats from '../components/QuizStats';
 import { Quiz } from '../types';
-import axios from 'axios';
+import api from '../utils/axios-config';
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -35,12 +35,14 @@ const Dashboard: React.FC = () => {
   useEffect(() => {
     const fetchQuizzes = async () => {
       try {
-        const response = await axios.get<Quiz[]>('http://localhost:8080/api/quizzes');
-        setQuizzes(response.data);
+        const response = await api.get('/api/quizzes');
+        const quizzesData = Array.isArray(response.data) ? response.data : [];
+        setQuizzes(quizzesData);
         setError(null);
       } catch (error) {
         console.error('Failed to fetch quizzes:', error);
-        setError('Failed to load quizzes. Please try again later.');
+        setError('Failed to fetch quizzes. Please ensure you are logged in.');
+        setQuizzes([]);
       } finally {
         setLoading(false);
       }
@@ -49,18 +51,24 @@ const Dashboard: React.FC = () => {
     fetchQuizzes();
   }, []);
 
+  // Log state changes
+  useEffect(() => {
+    console.log('Loading state:', loading);
+    console.log('Error state:', error);
+  }, [loading, error]);
+
   const handleDelete = async (id: number) => {
     try {
-      await axios.delete(`http://localhost:8080/api/quizzes/${id}`);
-      setQuizzes(quizzes.filter(quiz => quiz.id !== id));
+      await api.delete(`/api/quizzes/${id}`);
+      setQuizzes(prevQuizzes => prevQuizzes.filter(quiz => quiz.id !== id));
     } catch (error) {
       console.error('Failed to delete quiz:', error);
     }
   };
 
-  const filteredQuizzes = quizzes.filter(quiz =>
-    quiz.title.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredQuizzes = quizzes?.filter(quiz =>
+    quiz?.title?.toLowerCase().includes(searchTerm.toLowerCase())
+  ) || [];
 
   return (
     <Container maxWidth="lg" sx={{ py: 4 }}>
@@ -98,6 +106,7 @@ const Dashboard: React.FC = () => {
               color="primary"
               startIcon={<AddIcon />}
               onClick={() => navigate('/quiz/create')}
+              aria-label="Create Quiz"
             >
               Create Quiz
             </Button>

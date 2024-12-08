@@ -1,41 +1,45 @@
 [package]
 name = "quiz-app-backend"
 version = "0.1.0"
-edition = "2021"
+edition = "2018"
 default-run = "quiz-app-backend"
 
 [dependencies]
-actix-web = "4"
-actix-cors = "0.6"
-actix-web-httpauth = "0.8"
-actix-http = "3.3"
-chrono = { version = "0.4", features = ["serde"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-sqlx = { version = "0.7", features = ["runtime-tokio", "tls-native-tls", "postgres", "time", "chrono", "uuid"] }
+actix-web = "4.3.0"          # Updated from "3.3.3" to "4.3.0"
+actix-cors = "0.6.4"          # Changed from "2.1.0" to "0.6.4"
+actix-web-httpauth = "0.7.0"  # Updated from "0.5.1" to "0.7.0"
+actix-http = "2.2.1"
+actix-service = "2.0"
+serde = { version = "1.0.152", features = ["derive"] }
+serde_json = "1.0.93"
+tokio = { version = "1.0", features = ["full"] }  # Update from 0.2.25
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "tls-native-tls", "postgres", "uuid", "chrono", "bigdecimal"] }  # Removed "type_info" feature
+dotenv = "0.15.0"
+env_logger = "0.9.3"
+log = "0.4.17"
+chrono = { version = "0.4.23", features = ["serde"] }
+jsonwebtoken = "8.1.1"
+bcrypt = "0.10.0"
+uuid = { version = "1.0", features = ["v4", "serde"] }  # Removed "postgres" feature
+validator = { version = "0.14.0", features = ["derive"] }
+rand = "0.8.5"
+thiserror = "1.0.38"
+async-trait = "0.1.64"
+lru = "0.7.8"
+futures-util = "0.3.26"
+moka = { version = "0.9.6", features = ["future"] }
 derive_more = "0.99.16"
-tokio = { version = "1.29", features = ["full"] }
-dotenv = "0.15"
-env_logger = "0.10"
-log = "0.4"
-jsonwebtoken = "=8.3.0"
-bcrypt = "=0.10.0"
-uuid = { version = "1.4", features = ["v4", "serde"] }  # Remove sqlx feature, as it's not needed
 futures = "0.3"
-thiserror = "1.0"
-async-trait = "0.1"
-lru = "0.12.2"  # For LRU cache implementation
-idna = "=0.4.0"
-futures-util = "0.3"
-moka = { version = "0.12", features = ["future"] }
+bigdecimal = { version = "0.4", features = ["serde"] }
+parking_lot = "0.12"
+bytes = "1.0"
+
+[lib]
+name = "quiz_app_backend"
+path = "src/lib.rs"
 
 [dev-dependencies]
 tokio-test = "0.4"
 mockall = "0.11"
 rand = "0.8"
 actix-rt = "2.8"
-actix-service = "2.0"
-
-[[bin]]
-name = "quiz-app-backend"
-path = "src/main.rs"

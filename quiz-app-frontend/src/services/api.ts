@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { Quiz, Question, Answer, QuizSubmission, SubmittedAnswer } from '../types';
+import { Quiz, Question, Answer, QuizSubmission } from '../types';
 
 const API_BASE_URL = 'http://localhost:8080/api';
 
@@ -25,7 +25,7 @@ export const quizService = {
       ...quiz,
       questions: questions.map((q: Question) => ({
         ...q,
-        answers: answers.filter((a: Answer) => a.question_id === q.id)
+        answers: answers.filter((a: Answer) => a.id && a.id === q.id)
       }))
     };
   },
